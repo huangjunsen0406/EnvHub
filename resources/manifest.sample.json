@@ -1,0 +1,30 @@
+{
+  "python": {
+    "3.12.6": {
+      "darwin-arm64": { "file": "python-3.12.6-darwin-arm64.zip", "sha256": "<sha256>" },
+      "darwin-x64": { "file": "python-3.12.6-darwin-x64.zip", "sha256": "<sha256>" },
+      "win-x64": { "file": "python-3.12.6-win-x64.zip", "sha256": "<sha256>" }
+    }
+  },
+  "node": {
+    "20.11.1": {
+      "darwin-arm64": { "file": "node-20.11.1-darwin-arm64.tar.gz", "sha256": "<sha256>" },
+      "darwin-x64": { "file": "node-20.11.1-darwin-x64.tar.gz", "sha256": "<sha256>" },
+      "win-x64": { "file": "node-20.11.1-win-x64.zip", "sha256": "<sha256>" }
+    }
+  },
+  "pg": {
+    "16.4": {
+      "darwin-arm64": { "file": "pg-16.4-darwin-arm64.zip", "sha256": "<sha256>" },
+      "darwin-x64": { "file": "pg-16.4-darwin-x64.zip", "sha256": "<sha256>" },
+      "win-x64": { "file": "pg-16.4-win-x64.zip", "sha256": "<sha256>" }
+    }
+  },
+  "pgvector": {
+    "16": {
+      "darwin-arm64": { "file": "pgvector-0.7.0-pg16-darwin-arm64.zip", "sha256": "<sha256>" },
+      "darwin-x64": { "file": "pgvector-0.7.0-pg16-darwin-x64.zip", "sha256": "<sha256>" },
+      "win-x64": { "file": "pgvector-0.7.0-pg16-win-x64.zip", "sha256": "<sha256>" }
+    }
+  }
+}
