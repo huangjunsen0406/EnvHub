@@ -50,7 +50,10 @@ export async function downloadFile(options: DownloadOptions): Promise<string> {
   const existingSize = resume && existsSync(tempPath) ? statSync(tempPath).size : 0
 
   return new Promise((resolve, reject) => {
-    const headers: any = {}
+    const headers: any = {
+      'User-Agent': 'EnvHub/1.0 (Electron)',
+      Accept: '*/*'
+    }
     if (existingSize > 0) {
       headers['Range'] = `bytes=${existingSize}-`
       downloaded = existingSize
@@ -173,7 +176,8 @@ export function formatTime(seconds: number): string {
 }
 
 /**
- * 扫描下载目录，查找已下载的安装包
+ * 扫描下载目录，查找已下载的 Python 安装包
+ * PostgreSQL 和 Node.js 使用压缩包，会自动安装，不需要扫描
  */
 export function scanDownloadedInstallers(): {
   python: Record<string, string>
@@ -207,16 +211,6 @@ export function scanDownloadedInstallers(): {
       if (pythonMatch) {
         const version = pythonMatch[1]
         result.python[version] = fullPath
-        continue
-      }
-
-      // PostgreSQL 安装包匹配
-      // Windows: postgresql-16.4-1-windows-x64.exe
-      // macOS: postgresql-16.4-1-osx.dmg
-      const pgMatch = file.match(/^postgresql-(\d+\.\d+)-\d+-(?:windows-x64\.exe|osx\.dmg)$/)
-      if (pgMatch) {
-        const version = pgMatch[1]
-        result.pg[version] = fullPath
         continue
       }
     }

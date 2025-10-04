@@ -22,8 +22,11 @@ export async function installPostgres(
   await extractArchive(join(opts.bundleDir, opts.artifact.file), baseDir)
   await removeQuarantineAttr(baseDir)
 
+  // EDB binaries 解压后在 pgsql/ 子目录中
+  const pgRoot = join(baseDir, 'pgsql')
+
   // Binary locations
-  const binDir = process.platform === 'win32' ? join(baseDir, 'bin') : join(baseDir, 'bin')
+  const binDir = join(pgRoot, 'bin')
   const psql = process.platform === 'win32' ? join(binDir, 'psql.exe') : join(binDir, 'psql')
   const pgctl = process.platform === 'win32' ? join(binDir, 'pg_ctl.exe') : join(binDir, 'pg_ctl')
   const postgres =
@@ -41,7 +44,7 @@ export async function installPostgres(
     platform: opts.platform,
     cluster: 'main',
     port: 5432,
-    auth: 'scram'
+    auth: 'trust'
   })
 
   // Auto-start PostgreSQL
@@ -56,7 +59,7 @@ export interface PgInitOptions {
   platform: DetectedPlatform
   cluster: string
   port?: number
-  auth?: 'scram' | 'md5'
+  auth?: 'scram' | 'md5' | 'trust'
 }
 
 export async function initDb(pgBinDir: string, opts: PgInitOptions): Promise<string> {
@@ -67,6 +70,7 @@ export async function initDb(pgBinDir: string, opts: PgInitOptions): Promise<str
   const args = ['-D', dataDir]
   if (opts.auth === 'scram') args.push('--auth=scram-sha-256')
   else if (opts.auth === 'md5') args.push('--auth=md5')
+  else if (opts.auth === 'trust') args.push('--auth=trust')
   await run(initdb, args)
 
   // Basic config hardening
@@ -77,7 +81,8 @@ export async function initDb(pgBinDir: string, opts: PgInitOptions): Promise<str
     writeFileSync(confPath, conf, { flag: 'a' })
   } catch {}
   try {
-    const hba = `# TYPE  DATABASE        USER            ADDRESS                 METHOD\nlocal   all             all                                     scram-sha-256\n`
+    const authMethod = opts.auth || 'trust'
+    const hba = `# TYPE  DATABASE        USER            ADDRESS                 METHOD\nlocal   all             all                                     ${authMethod}\n`
     writeFileSync(hbaPath, hba, { flag: 'a' })
   } catch {}
 

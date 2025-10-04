@@ -3,6 +3,7 @@ import { join } from 'path'
 import { envhubRoot, toolchainRoot } from './paths'
 import { DetectedPlatform } from './platform'
 import { writeShims, removeShims } from './shims'
+import { execSync } from 'child_process'
 
 export type Tool = 'python' | 'node' | 'pg'
 
@@ -56,7 +57,20 @@ export function listInstalled(
 
 export function uninstallTool(tool: Tool, version: string, dp: DetectedPlatform): void {
   const p = toolchainRoot(tool, version, dp)
-  if (existsSync(p)) rmSync(p, { recursive: true, force: true })
+  if (!existsSync(p)) return
+
+  try {
+    // 对于 macOS，使用 rm -rf 处理 .app 包和 .asar 文件
+    if (process.platform === 'darwin') {
+      execSync(`rm -rf "${p}"`, { encoding: 'utf8' })
+    } else {
+      // Windows 和 Linux 使用 Node.js 的 rmSync
+      rmSync(p, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+    }
+  } catch (error) {
+    console.error(`Failed to uninstall ${tool}@${version}:`, error)
+    throw error
+  }
 }
 
 export function updateShimsForTool(tool: Tool, version: string, dp: DetectedPlatform): void {
@@ -90,7 +104,8 @@ export function updateShimsForTool(tool: Tool, version: string, dp: DetectedPlat
       { name: 'npm', target: npm }
     ])
   } else if (tool === 'pg') {
-    const binDir = join(base, 'bin')
+    // EDB binaries 解压后在 pgsql/ 子目录中
+    const binDir = join(base, 'pgsql', 'bin')
     const psql = process.platform === 'win32' ? join(binDir, 'psql.exe') : join(binDir, 'psql')
     const pgctl = process.platform === 'win32' ? join(binDir, 'pg_ctl.exe') : join(binDir, 'pg_ctl')
     const postgres =

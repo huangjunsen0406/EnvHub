@@ -190,16 +190,27 @@ export async function fetchPostgresVersions(platform: DetectedPlatform): Promise
 }
 
 /**
- * 构建 PostgreSQL EDB 安装器下载链接
- * 用户需要从 EDB 网站下载安装器
+ * 构建 PostgreSQL EDB binaries 压缩包下载链接
+ * 使用 EDB 提供的二进制压缩包，而不是图形安装器
  */
 function buildPostgresInstallerUrl(version: string, platform: DetectedPlatform): string {
-  // EDB 下载页面
-  // 注意：EDB 使用动态 fileid，我们返回下载页面让用户选择
-  // 或者可以尝试构建直接下载链接（需要找到 fileid 映射规则）
+  // EDB binaries 下载 URL 格式
+  // https://get.enterprisedb.com/postgresql/postgresql-{version}-{build}-{platform}-binaries.zip
+  // 例如：postgresql-16.6-1-osx-binaries.zip
 
-  // 暂时返回 EDB 下载页面
-  return 'https://www.enterprisedb.com/downloads/postgres-postgresql-downloads'
+  let platformStr: string
+  if (platform.platformKey === 'win-x64') {
+    platformStr = 'windows-x64'
+  } else if (platform.platformKey === 'darwin-x64') {
+    platformStr = 'osx'
+  } else if (platform.platformKey === 'darwin-arm64') {
+    platformStr = 'osx'
+  } else {
+    platformStr = 'linux-x64'
+  }
+
+  // EDB binaries 使用构建号 "-1"
+  return `https://get.enterprisedb.com/postgresql/postgresql-${version}-1-${platformStr}-binaries.zip`
 }
 
 /**

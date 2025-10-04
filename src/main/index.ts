@@ -539,26 +539,30 @@ app.whenReady().then(() => {
 
         logInfo(`Download completed: ${savePath}`)
 
-        // Python 和 PostgreSQL: 只下载安装器，不自动打开
+        // Python: 只下载安装器，不自动打开
         if (tool === 'python') {
           logInfo(`Python installer downloaded: ${savePath}`)
           return { ok: true, savePath, message: '安装器已下载' }
         }
 
-        if (tool === 'pg') {
-          logInfo(`PostgreSQL installer downloaded: ${savePath}`)
-          return { ok: true, savePath, message: '安装器已下载' }
-        }
-
-        // Node.js: 自动解压并安装
+        // Node.js 和 PostgreSQL: 自动解压并安装
         logInfo(`Extracting and installing ${tool} ${version}`)
 
-        await installNode({
-          version,
-          platform: dp,
-          bundleDir: cacheDir(),
-          artifact: { file: fileName, sha256: '' }
-        })
+        if (tool === 'node') {
+          await installNode({
+            version,
+            platform: dp,
+            bundleDir: cacheDir(),
+            artifact: { file: fileName, sha256: '' }
+          })
+        } else if (tool === 'pg') {
+          await installPostgres({
+            version,
+            platform: dp,
+            bundleDir: cacheDir(),
+            artifact: { file: fileName, sha256: '' }
+          })
+        }
 
         logInfo(`${tool} ${version} installed successfully`)
         return { ok: true, savePath }
@@ -578,19 +582,6 @@ app.whenReady().then(() => {
 
   ipcMain.handle('envhub:python:deleteInstaller', async (_evt, args: { path: string }) => {
     logInfo(`Deleting Python installer: ${args.path}`)
-    const fs = require('fs') as typeof import('fs')
-    fs.unlinkSync(args.path)
-    return { ok: true }
-  })
-
-  ipcMain.handle('envhub:pg:openInstaller', async (_evt, args: { path: string }) => {
-    logInfo(`Opening PostgreSQL installer: ${args.path}`)
-    await shell.openPath(args.path)
-    return { ok: true }
-  })
-
-  ipcMain.handle('envhub:pg:deleteInstaller', async (_evt, args: { path: string }) => {
-    logInfo(`Deleting PostgreSQL installer: ${args.path}`)
     const fs = require('fs') as typeof import('fs')
     fs.unlinkSync(args.path)
     return { ok: true }

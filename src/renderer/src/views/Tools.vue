@@ -27,6 +27,7 @@ const state = reactive({
   port: 5432,
   loading: false,
   fetchingVersions: false,
+  installingVersions: {} as Record<string, boolean>, // 记录正在安装的版本
   pgStatus: {} as Record<
     string,
     { running: boolean; pid?: number; port?: number; dataDir?: string }
@@ -135,10 +136,6 @@ function isCurrent(tool: Tool, v: string): boolean {
 
 function isPythonInstallerDownloaded(version: string): boolean {
   return !!downloadedInstallers.value?.python?.[version]
-}
-
-function isPgInstallerDownloaded(version: string): boolean {
-  return !!downloadedInstallers.value?.pg?.[version]
 }
 
 async function install(tool: Tool, v: string): Promise<void> {
@@ -313,8 +310,9 @@ function onInstallModeChange(val: string): void {
 }
 
 async function installOnline(tool: Tool, version: string, url: string): Promise<void> {
+  const versionKey = `${tool}-${version}`
   try {
-    state.loading = true
+    state.installingVersions[versionKey] = true
     showInstallProgress(tool, version)
 
     updateInstallProgress(`正在下载 ${tool} ${version}...`)
@@ -348,13 +346,8 @@ async function installOnline(tool: Tool, version: string, url: string): Promise<
         await toolsStore.loadDownloadedInstallers()
         updateInstallProgress('安装包下载完成！', 'success')
         Message.success(`Python ${version} 安装包已下载`)
-      } else if (tool === 'pg') {
-        // PostgreSQL 下载完成，重新扫描下载目录
-        await toolsStore.loadDownloadedInstallers()
-        updateInstallProgress('安装包下载完成！', 'success')
-        Message.success(`PostgreSQL ${version} 安装包已下载`)
       } else {
-        // Node.js 自动安装
+        // Node.js 和 PostgreSQL 自动安装
         updateInstallProgress('下载并安装完成！', 'success')
         Message.success(`${tool} ${version} 安装完成`)
         await refreshInstalled()
@@ -368,7 +361,7 @@ async function installOnline(tool: Tool, version: string, url: string): Promise<
     updateInstallProgress(`安装失败：${message}`, 'error')
     Message.error(`安装失败：${message}`)
   } finally {
-    state.loading = false
+    delete state.installingVersions[versionKey]
   }
 }
 
@@ -397,38 +390,6 @@ async function deletePythonInstaller(version: string): Promise<void> {
     await window.electron.ipcRenderer.invoke('envhub:python:deleteInstaller', {
       path: installerPath
     })
-    // 重新扫描下载目录
-    await toolsStore.loadDownloadedInstallers()
-    Message.success('安装包已删除')
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : '未知错误'
-    Message.error(`删除失败：${message}`)
-  }
-}
-
-async function openPgInstaller(version: string): Promise<void> {
-  const installerPath = downloadedInstallers.value?.pg?.[version]
-  if (!installerPath) {
-    Message.error('安装包不存在')
-    return
-  }
-  try {
-    await window.electron.ipcRenderer.invoke('envhub:pg:openInstaller', { path: installerPath })
-    Message.success('已打开安装器，请按照向导完成安装')
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : '未知错误'
-    Message.error(`打开安装器失败：${message}`)
-  }
-}
-
-async function deletePgInstaller(version: string): Promise<void> {
-  const installerPath = downloadedInstallers.value?.pg?.[version]
-  if (!installerPath) {
-    Message.error('安装包不存在')
-    return
-  }
-  try {
-    await window.electron.ipcRenderer.invoke('envhub:pg:deleteInstaller', { path: installerPath })
     // 重新扫描下载目录
     await toolsStore.loadDownloadedInstallers()
     Message.success('安装包已删除')
@@ -591,7 +552,7 @@ onUnmounted(() => {
                     v-if="!isPythonInstallerDownloaded(record.version)"
                     type="primary"
                     size="small"
-                    :loading="state.loading"
+                    :loading="state.installingVersions[`python-${record.version}`]"
                     @click="installOnline('python', record.version, record.url)"
                   >
                     <template #icon>
@@ -718,7 +679,7 @@ onUnmounted(() => {
                   v-if="state.installMode === 'online' && !isInstalled('node', record.version)"
                   type="primary"
                   size="small"
-                  :loading="state.loading"
+                  :loading="state.installingVersions[`node-${record.version}`]"
                   @click="installOnline('node', record.version, record.url)"
                 >
                   <template #icon>
@@ -832,13 +793,6 @@ onUnmounted(() => {
                 <a-tag v-if="isInstalled('pg', record.version || record)" color="green"
                   >已安装</a-tag
                 >
-                <a-tag
-                  v-else-if="
-                    state.installMode === 'online' && isPgInstallerDownloaded(record.version)
-                  "
-                  color="orange"
-                  >已下载</a-tag
-                >
                 <a-tag v-else color="gray">未安装</a-tag>
                 <a-tag v-if="isCurrent('pg', record.version || record)" color="blue"
                   >当前版本</a-tag
@@ -851,42 +805,67 @@ onUnmounted(() => {
                 <a-tag v-else-if="isInstalled('pg', record.version || record)" color="gray"
                   >已停止</a-tag
                 >
+                <a-tag v-if="state.installMode === 'online' && record.date" color="arcoblue">
+                  {{ new Date(record.date).toLocaleDateString() }}
+                </a-tag>
               </a-space>
             </template>
             <template #actions="{ record }">
               <a-space>
                 <!-- 在线模式 -->
                 <template v-if="state.installMode === 'online'">
-                  <!-- 未下载安装包：显示下载按钮 -->
+                  <!-- 在线安装按钮（下载+安装一键完成） -->
                   <a-button
-                    v-if="!isPgInstallerDownloaded(record.version)"
+                    v-if="!isInstalled('pg', record.version)"
                     type="primary"
                     size="small"
-                    :loading="state.loading"
+                    :loading="state.installingVersions[`pg-${record.version}`]"
                     @click="installOnline('pg', record.version, record.url)"
                   >
                     <template #icon>
                       <icon-cloud-download />
                     </template>
-                    下载安装包
+                    在线安装
                   </a-button>
-                  <!-- 已下载安装包：显示安装和删除按钮 -->
-                  <template v-else>
-                    <a-button type="primary" size="small" @click="openPgInstaller(record.version)">
-                      安装
-                    </a-button>
-                    <a-popconfirm
-                      content="确定要删除此安装包吗？"
-                      @ok="deletePgInstaller(record.version)"
+                  <!-- 已安装：显示设为当前/取消当前/卸载按钮 -->
+                  <a-button
+                    v-if="isInstalled('pg', record.version) && !isCurrent('pg', record.version)"
+                    type="outline"
+                    size="small"
+                    @click="useVer('pg', record.version)"
+                  >
+                    <template #icon>
+                      <icon-check />
+                    </template>
+                    设为当前
+                  </a-button>
+                  <a-button
+                    v-if="isInstalled('pg', record.version) && isCurrent('pg', record.version)"
+                    type="outline"
+                    size="small"
+                    @click="unsetCurrent('pg')"
+                  >
+                    <template #icon>
+                      <icon-check />
+                    </template>
+                    取消当前
+                  </a-button>
+                  <a-popconfirm
+                    content="确定要卸载此版本吗？"
+                    @ok="uninstall('pg', record.version)"
+                  >
+                    <a-button
+                      v-if="isInstalled('pg', record.version)"
+                      type="outline"
+                      status="danger"
+                      size="small"
                     >
-                      <a-button type="outline" status="danger" size="small">
-                        <template #icon>
-                          <icon-delete />
-                        </template>
-                        删除
-                      </a-button>
-                    </a-popconfirm>
-                  </template>
+                      <template #icon>
+                        <icon-delete />
+                      </template>
+                      卸载
+                    </a-button>
+                  </a-popconfirm>
                 </template>
 
                 <!-- 离线模式 -->
