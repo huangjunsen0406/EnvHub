@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { IconDashboard, IconCodeSquare, IconSettings, IconBook } from '@arco-design/web-vue/es/icon'
+import {
+  IconDashboard,
+  IconCodeSquare,
+  IconSettings,
+  IconBook,
+  IconMenuFold,
+  IconMenuUnfold
+} from '@arco-design/web-vue/es/icon'
 import Dashboard from './views/Dashboard.vue'
 import Tools from './views/Tools.vue'
 import Settings from './views/Settings.vue'
@@ -24,6 +31,7 @@ onMounted(() => {
   logsStore.initLogListener()
   logsStore.addLog('EnvHub 日志系统已启动', 'info')
 })
+
 </script>
 
 <template>
@@ -36,31 +44,45 @@ onMounted(() => {
       breakpoint="lg"
       @collapse="collapsed = $event"
     >
-      <div class="logo">
-        <span v-if="!collapsed" class="logo-text">EnvHub</span>
-        <span v-else class="logo-icon">E</span>
+      <div class="sider-container">
+        <div class="sider-top">
+          <div class="logo">
+            <span v-if="!collapsed" class="logo-text">EnvHub</span>
+            <span v-else class="logo-icon">E</span>
+          </div>
+          <a-menu
+            :selected-keys="[currentView]"
+            :style="{ width: '100%' }"
+            @menu-item-click="currentView = $event"
+          >
+            <a-menu-item v-for="item in menuItems" :key="item.key">
+              <template #icon>
+                <component :is="item.icon" />
+              </template>
+              {{ item.label }}
+            </a-menu-item>
+          </a-menu>
+        </div>
+
+        <div class="sider-bottom">
+          <a-button
+            type="text"
+            :style="{ width: '100%', height: '48px' }"
+            @click="collapsed = !collapsed"
+          >
+            <template #icon>
+              <icon-menu-fold v-if="!collapsed" />
+              <icon-menu-unfold v-else />
+            </template>
+            <span v-if="!collapsed">收起菜单</span>
+          </a-button>
+        </div>
       </div>
-      <a-menu
-        :selected-keys="[currentView]"
-        :style="{ width: '100%' }"
-        @menu-item-click="currentView = $event"
-      >
-        <a-menu-item v-for="item in menuItems" :key="item.key">
-          <template #icon>
-            <component :is="item.icon" />
-          </template>
-          {{ item.label }}
-        </a-menu-item>
-      </a-menu>
     </a-layout-sider>
 
     <a-layout>
       <a-layout-header class="layout-header">
         <div class="header-left">
-          <a-button type="text" shape="circle" @click="collapsed = !collapsed">
-            <icon-menu-unfold v-if="collapsed" />
-            <icon-menu-fold v-else />
-          </a-button>
           <span class="header-title">{{
             menuItems.find((m) => m.key === currentView)?.label
           }}</span>
@@ -93,6 +115,22 @@ onMounted(() => {
 .layout-sider {
   background: #fff;
   box-shadow: 2px 0 8px rgba(0, 0, 0, 0.05);
+}
+
+.sider-container {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.sider-top {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.sider-bottom {
+  border-top: 1px solid #f0f0f0;
+  padding: 8px;
 }
 
 .logo {
