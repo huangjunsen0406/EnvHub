@@ -122,16 +122,17 @@ async function useVer(tool: Tool, v: string): Promise<void> {
 
 async function unsetCurrent(tool: Tool): Promise<void> {
   try {
-    if (tool === 'pg') {
-      const currentVersion = installed.value.current?.pg
-      if (currentVersion && state.pgStatus[currentVersion]?.running) {
-        await stopPg(currentVersion)
-      }
-    }
-
     await window.electron.ipcRenderer.invoke('envhub:use', { tool, version: '' })
     Message.success(`已取消 ${tool} 的当前版本设置`)
     await refreshInstalled()
+
+    // PostgreSQL 停用后刷新状态
+    if (tool === 'pg') {
+      const versions = Object.keys(state.pgStatus)
+      for (const v of versions) {
+        await checkPgStatus(v)
+      }
+    }
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : '未知错误'
     Message.error(`取消失败：${message}`)
@@ -160,44 +161,6 @@ async function checkPgStatus(v: string): Promise<void> {
     state.pgStatus[v] = status
   } catch (error) {
     console.error('Failed to check PG status:', error)
-  }
-}
-
-async function stopPg(v: string): Promise<void> {
-  try {
-    state.loading = true
-    const pgMajor = v.split('.')[0]
-    const dataDir = state.pgStatus[v]?.dataDir || `~/.envhub/pg/${pgMajor}/${state.cluster}`
-    await window.electron.ipcRenderer.invoke('envhub:pg:stop', {
-      pgVersion: v,
-      dataDir
-    })
-    Message.success(`PostgreSQL ${v} 已停止`)
-    await checkPgStatus(v)
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : '未知错误'
-    Message.error(`停止失败：${message}`)
-  } finally {
-    state.loading = false
-  }
-}
-
-async function restartPg(v: string): Promise<void> {
-  try {
-    state.loading = true
-    const pgMajor = v.split('.')[0]
-    const dataDir = state.pgStatus[v]?.dataDir || `~/.envhub/pg/${pgMajor}/${state.cluster}`
-    await window.electron.ipcRenderer.invoke('envhub:pg:restart', {
-      pgVersion: v,
-      dataDir
-    })
-    Message.success(`PostgreSQL ${v} 已重启`)
-    await checkPgStatus(v)
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : '未知错误'
-    Message.error(`重启失败：${message}`)
-  } finally {
-    state.loading = false
   }
 }
 
@@ -520,25 +483,6 @@ onUnmounted(() => {
                     卸载
                   </a-button>
                 </a-popconfirm>
-                <a-button
-                  v-if="state.pgStatus[record.version]?.running"
-                  type="outline"
-                  status="warning"
-                  size="small"
-                  :loading="state.loading"
-                  @click="stopPg(record.version)"
-                >
-                  停止
-                </a-button>
-                <a-button
-                  v-if="state.pgStatus[record.version]?.running"
-                  type="outline"
-                  size="small"
-                  :loading="state.loading"
-                  @click="restartPg(record.version)"
-                >
-                  重启
-                </a-button>
                 <a-button
                   v-if="isInstalled('pg', record.version)"
                   type="text"

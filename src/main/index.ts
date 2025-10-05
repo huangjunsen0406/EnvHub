@@ -1,7 +1,7 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { homedir } from 'os'
 import { detectPlatform } from './envhub/platform'
 import { toolchainRoot } from './envhub/paths'
-import { installPython } from './envhub/installers/python'
 import { installNode } from './envhub/installers/node'
 import {
   installPostgres,
@@ -21,7 +21,7 @@ import {
   updateShimsForTool
 } from './envhub/state'
 import { isPathConfigured, addToPath, removeFromPath } from './envhub/path-manager'
-import { isPgRunning, pgStop, pgRestart, getPgStatus } from './envhub/pg-manager'
+import { isPgRunning, pgStop, getPgStatus } from './envhub/pg-manager'
 import {
   fetchPythonVersions,
   fetchNodeVersions,
@@ -108,6 +108,11 @@ app.whenReady().then(() => {
 
   // EnvHub IPC handlers (MVP, offline bundle driven)
   ipcMain.handle('envhub:detectPlatform', () => detectPlatform())
+
+  // 获取用户主目录路径
+  ipcMain.handle('envhub:getHomePath', () => {
+    return homedir()
+  })
 
   // 软件管理：查询已安装、设为当前、卸载、单项安装
   ipcMain.handle('envhub:installed:list', () => {
@@ -456,37 +461,10 @@ app.whenReady().then(() => {
     const dp = detectPlatform()
     const pgBase = toolchainRoot('pg', args.pgVersion, dp)
     const binDir = join(pgBase, 'pgsql', 'bin')
-    const home = process.env.HOME || require('os').homedir()
+    const home = process.env.HOME || homedir()
     const dataDir = args.dataDir?.startsWith('~/') ? join(home, args.dataDir.slice(2)) : args.dataDir
     return await getPgStatus(binDir, dataDir)
   })
-
-  ipcMain.handle('envhub:pg:stop', async (_evt, args: { pgVersion: string; dataDir: string }) => {
-    const dp = detectPlatform()
-    const pgBase = toolchainRoot('pg', args.pgVersion, dp)
-    const binDir = join(pgBase, 'pgsql', 'bin')
-    const home = process.env.HOME || require('os').homedir()
-    const dataDir = args.dataDir?.startsWith('~/') ? join(home, args.dataDir.slice(2)) : args.dataDir
-    logInfo(`Stopping PostgreSQL at ${dataDir}`)
-    await pgStop(binDir, dataDir)
-    logInfo('PostgreSQL stopped')
-    return { ok: true }
-  })
-
-  ipcMain.handle(
-    'envhub:pg:restart',
-    async (_evt, args: { pgVersion: string; dataDir: string }) => {
-      const dp = detectPlatform()
-      const pgBase = toolchainRoot('pg', args.pgVersion, dp)
-      const binDir = join(pgBase, 'pgsql', 'bin')
-      const home = process.env.HOME || require('os').homedir()
-      const dataDir = args.dataDir?.startsWith('~/') ? join(home, args.dataDir.slice(2)) : args.dataDir
-      logInfo(`Restarting PostgreSQL at ${dataDir}`)
-      await pgRestart(binDir, dataDir)
-      logInfo('PostgreSQL restarted')
-      return { ok: true }
-    }
-  )
 
   createWindow()
 

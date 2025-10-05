@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { IconCheck, IconClose, IconClockCircle } from '@arco-design/web-vue/es/icon'
+import { IconCheck, IconClockCircle } from '@arco-design/web-vue/es/icon'
 import { useToolsStore } from '../store/tools'
 
 const toolsStore = useToolsStore()
@@ -106,11 +106,11 @@ onMounted(async () => {
     <a-row :gutter="16" style="margin-top: 16px">
       <a-col :span="24">
         <a-card title="PATH 环境变量" :bordered="false">
-          <a-alert v-if="!pathStatus.configured" type="warning" closable>
+          <a-alert v-if="!pathStatus.configured" type="info" closable>
             <template #icon>
               <icon-clock-circle />
             </template>
-            尚未配置 PATH 环境变量，请前往"设置"页面配置后才能在终端中使用工具。
+            PATH 环境变量将在启用工具时自动配置到 Shell 配置文件（.zshrc 等）。
           </a-alert>
           <a-alert v-else type="success" closable>
             <template #icon>
@@ -129,29 +129,29 @@ onMounted(async () => {
             <div class="step-item">
               <div class="step-number">1</div>
               <div class="step-content">
-                <h4>设置离线包目录</h4>
-                <p>前往"设置"页面，选择包含 manifest.json 的离线包目录</p>
+                <h4>选择工具版本</h4>
+                <p>前往"工具管理"页面，浏览 Python、Node.js、PostgreSQL 的在线版本列表</p>
               </div>
             </div>
             <div class="step-item">
               <div class="step-number">2</div>
               <div class="step-content">
-                <h4>安装开发工具</h4>
-                <p>在"工具管理"页面选择需要的 Python、Node.js、PostgreSQL 版本进行安装</p>
+                <h4>下载并安装</h4>
+                <p>点击"安装"按钮下载工具（Python 需要手动运行安装器，Node.js 和 PostgreSQL 自动安装）</p>
               </div>
             </div>
             <div class="step-item">
               <div class="step-number">3</div>
               <div class="step-content">
-                <h4>配置 PATH</h4>
-                <p>返回"设置"页面，一键添加 ~/.envhub/shims 到系统 PATH</p>
+                <h4>启用工具</h4>
+                <p>安装完成后，点击"启用"按钮设置为当前版本（自动配置 PATH 环境变量）</p>
               </div>
             </div>
             <div class="step-item">
               <div class="step-number">4</div>
               <div class="step-content">
                 <h4>开始使用</h4>
-                <p>在终端中直接使用 python、node、psql 等命令</p>
+                <p>重启终端后，直接使用 python、node、psql 等命令（停用工具会移除环境变量）</p>
               </div>
             </div>
           </a-space>
