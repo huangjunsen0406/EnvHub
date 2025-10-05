@@ -219,9 +219,72 @@ app.whenReady().then(() => {
 
   ipcMain.handle(
     'envhub:use',
-    (_evt, args: { tool: 'python' | 'node' | 'pg'; version: string }) => {
+    async (_evt, args: { tool: 'python' | 'node' | 'pg'; version: string }) => {
       const dp = detectPlatform()
-      logInfo(`Use ${args.tool}@${args.version}`)
+      logInfo(`Use ${args.tool}@${args.version || '(unset)'}`)
+
+      // Special handling for PostgreSQL: start when set, stop when unset
+      if (args.tool === 'pg') {
+        const cur = getCurrent().current?.pg
+
+        // If unsetting current, stop existing cluster first
+        if (!args.version) {
+          if (cur) {
+            try {
+              const base = toolchainRoot('pg', cur, dp)
+              const binDir = join(base, 'pgsql', 'bin')
+              const major = cur.split('.')[0]
+              const { pgDataDir } = await import('./envhub/paths')
+              const dataDir = pgDataDir(major, 'main')
+              logInfo(`Stopping PostgreSQL for unset: ${dataDir}`)
+              await pgStop(binDir, dataDir)
+            } catch (e: any) {
+              logInfo(`Stop on unset skipped/failed: ${e?.message || e}`)
+            }
+          }
+          updateShimsForTool('pg', '', dp)
+          return { ok: true, current: getCurrent().current }
+        }
+
+        // Switching/setting current: ensure previous cluster stopped (to avoid port conflict)
+        if (cur && cur !== args.version) {
+          try {
+            const baseOld = toolchainRoot('pg', cur, dp)
+            const binOld = join(baseOld, 'pgsql', 'bin')
+            const majorOld = cur.split('.')[0]
+            const { pgDataDir } = await import('./envhub/paths')
+            const dataOld = pgDataDir(majorOld, 'main')
+            logInfo(`Stopping previous PostgreSQL: ${dataOld}`)
+            await pgStop(binOld, dataOld)
+          } catch (e: any) {
+            logInfo(`Stop previous failed: ${e?.message || e}`)
+          }
+        }
+
+        // Write shims for the new version
+        updateShimsForTool('pg', args.version, dp)
+
+        // Ensure cluster is running for the selected version
+        try {
+          const base = toolchainRoot('pg', args.version, dp)
+          const binDir = join(base, 'pgsql', 'bin')
+          const major = args.version.split('.')[0]
+          const { pgDataDir } = await import('./envhub/paths')
+          const dataDir = pgDataDir(major, 'main')
+          const running = await isPgRunning(dataDir)
+          if (!running) {
+            const logPath = join(dataDir, 'pg.log')
+            logInfo(`Starting PostgreSQL for current version at ${dataDir}`)
+            await pgStart(binDir, dataDir, logPath)
+          }
+        } catch (e: any) {
+          logInfo(`Start current failed: ${e?.message || e}`)
+        }
+
+        return { ok: true, current: getCurrent().current }
+      }
+
+      // Default behavior for other tools
       updateShimsForTool(args.tool, args.version, dp)
       return { ok: true, current: getCurrent().current }
     }
@@ -597,16 +660,20 @@ app.whenReady().then(() => {
   ipcMain.handle('envhub:pg:status', async (_evt, args: { pgVersion: string; dataDir: string }) => {
     const dp = detectPlatform()
     const pgBase = toolchainRoot('pg', args.pgVersion, dp)
-    const binDir = join(pgBase, 'bin')
-    return await getPgStatus(binDir, args.dataDir)
+    const binDir = join(pgBase, 'pgsql', 'bin')
+    const home = process.env.HOME || require('os').homedir()
+    const dataDir = args.dataDir?.startsWith('~/') ? join(home, args.dataDir.slice(2)) : args.dataDir
+    return await getPgStatus(binDir, dataDir)
   })
 
   ipcMain.handle('envhub:pg:stop', async (_evt, args: { pgVersion: string; dataDir: string }) => {
     const dp = detectPlatform()
     const pgBase = toolchainRoot('pg', args.pgVersion, dp)
-    const binDir = join(pgBase, 'bin')
-    logInfo(`Stopping PostgreSQL at ${args.dataDir}`)
-    await pgStop(binDir, args.dataDir)
+    const binDir = join(pgBase, 'pgsql', 'bin')
+    const home = process.env.HOME || require('os').homedir()
+    const dataDir = args.dataDir?.startsWith('~/') ? join(home, args.dataDir.slice(2)) : args.dataDir
+    logInfo(`Stopping PostgreSQL at ${dataDir}`)
+    await pgStop(binDir, dataDir)
     logInfo('PostgreSQL stopped')
     return { ok: true }
   })
@@ -616,9 +683,11 @@ app.whenReady().then(() => {
     async (_evt, args: { pgVersion: string; dataDir: string }) => {
       const dp = detectPlatform()
       const pgBase = toolchainRoot('pg', args.pgVersion, dp)
-      const binDir = join(pgBase, 'bin')
-      logInfo(`Restarting PostgreSQL at ${args.dataDir}`)
-      await pgRestart(binDir, args.dataDir)
+      const binDir = join(pgBase, 'pgsql', 'bin')
+      const home = process.env.HOME || require('os').homedir()
+      const dataDir = args.dataDir?.startsWith('~/') ? join(home, args.dataDir.slice(2)) : args.dataDir
+      logInfo(`Restarting PostgreSQL at ${dataDir}`)
+      await pgRestart(binDir, dataDir)
       logInfo('PostgreSQL restarted')
       return { ok: true }
     }

@@ -3,7 +3,6 @@ import { ref, reactive, onMounted, onUnmounted, computed } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import {
   IconDownload,
-  IconCheck,
   IconDelete,
   IconSettings,
   IconFolder,
@@ -182,6 +181,9 @@ async function useVer(tool: Tool, v: string): Promise<void> {
     await window.electron.ipcRenderer.invoke('envhub:use', { tool, version: v })
     Message.success(`已切换到 ${tool} ${v}`)
     await refreshInstalled()
+    if (tool === 'pg') {
+      await checkPgStatus(v)
+    }
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : '未知错误'
     Message.error(`切换失败：${message}`)
@@ -190,6 +192,14 @@ async function useVer(tool: Tool, v: string): Promise<void> {
 
 async function unsetCurrent(tool: Tool): Promise<void> {
   try {
+    // 如果是 PostgreSQL，先停止服务
+    if (tool === 'pg') {
+      const currentVersion = installed.value.current?.pg
+      if (currentVersion && state.pgStatus[currentVersion]?.running) {
+        await stopPg(currentVersion)
+      }
+    }
+
     await window.electron.ipcRenderer.invoke('envhub:use', { tool, version: '' })
     Message.success(`已取消 ${tool} 的当前版本设置`)
     await refreshInstalled()
@@ -212,7 +222,8 @@ async function uninstall(tool: Tool, v: string): Promise<void> {
 
 async function checkPgStatus(v: string): Promise<void> {
   try {
-    const dataDir = `~/.envhub/pg/${v}/${state.cluster}`
+    const pgMajor = v.split('.')[0]
+    const dataDir = `~/.envhub/pg/${pgMajor}/${state.cluster}`
     const status = await window.electron.ipcRenderer.invoke('envhub:pg:status', {
       pgVersion: v,
       dataDir
@@ -226,7 +237,8 @@ async function checkPgStatus(v: string): Promise<void> {
 async function stopPg(v: string): Promise<void> {
   try {
     state.loading = true
-    const dataDir = state.pgStatus[v]?.dataDir || `~/.envhub/pg/${v}/${state.cluster}`
+    const pgMajor = v.split('.')[0]
+    const dataDir = state.pgStatus[v]?.dataDir || `~/.envhub/pg/${pgMajor}/${state.cluster}`
     await window.electron.ipcRenderer.invoke('envhub:pg:stop', {
       pgVersion: v,
       dataDir
@@ -244,7 +256,8 @@ async function stopPg(v: string): Promise<void> {
 async function restartPg(v: string): Promise<void> {
   try {
     state.loading = true
-    const dataDir = state.pgStatus[v]?.dataDir || `~/.envhub/pg/${v}/${state.cluster}`
+    const pgMajor = v.split('.')[0]
+    const dataDir = state.pgStatus[v]?.dataDir || `~/.envhub/pg/${pgMajor}/${state.cluster}`
     await window.electron.ipcRenderer.invoke('envhub:pg:restart', {
       pgVersion: v,
       dataDir
@@ -606,10 +619,7 @@ onUnmounted(() => {
                     size="small"
                     @click="useVer('python', record.version || record)"
                   >
-                    <template #icon>
-                      <icon-check />
-                    </template>
-                    设为当前
+                    启用
                   </a-button>
                   <a-button
                     v-if="
@@ -620,17 +630,17 @@ onUnmounted(() => {
                     size="small"
                     @click="unsetCurrent('python')"
                   >
-                    <template #icon>
-                      <icon-check />
-                    </template>
-                    取消当前
+                    停用
                   </a-button>
                   <a-popconfirm
                     content="确定要卸载此版本吗？"
                     @ok="uninstall('python', record.version || record)"
                   >
                     <a-button
-                      v-if="isInstalled('python', record.version || record)"
+                      v-if="
+                        isInstalled('python', record.version || record) &&
+                        !isCurrent('python', record.version || record)
+                      "
                       type="outline"
                       status="danger"
                       size="small"
@@ -685,7 +695,7 @@ onUnmounted(() => {
                   <template #icon>
                     <icon-cloud-download />
                   </template>
-                  在线安装
+                  安装
                 </a-button>
                 <!-- 离线安装按钮 -->
                 <a-button
@@ -712,10 +722,7 @@ onUnmounted(() => {
                   size="small"
                   @click="useVer('node', record.version || record)"
                 >
-                  <template #icon>
-                    <icon-check />
-                  </template>
-                  设为当前
+                  启用
                 </a-button>
                 <a-button
                   v-if="
@@ -726,17 +733,17 @@ onUnmounted(() => {
                   size="small"
                   @click="unsetCurrent('node')"
                 >
-                  <template #icon>
-                    <icon-check />
-                  </template>
-                  取消当前
+                  停用
                 </a-button>
                 <a-popconfirm
                   content="确定要卸载此版本吗？"
                   @ok="uninstall('node', record.version || record)"
                 >
                   <a-button
-                    v-if="isInstalled('node', record.version || record)"
+                    v-if="
+                      isInstalled('node', record.version || record) &&
+                      !isCurrent('node', record.version || record)
+                    "
                     type="outline"
                     status="danger"
                     size="small"
@@ -825,19 +832,16 @@ onUnmounted(() => {
                     <template #icon>
                       <icon-cloud-download />
                     </template>
-                    在线安装
+                    安装
                   </a-button>
-                  <!-- 已安装：显示设为当前/取消当前/卸载按钮 -->
+                  <!-- 已安装：显示启用/停用/卸载按钮 -->
                   <a-button
                     v-if="isInstalled('pg', record.version) && !isCurrent('pg', record.version)"
                     type="outline"
                     size="small"
                     @click="useVer('pg', record.version)"
                   >
-                    <template #icon>
-                      <icon-check />
-                    </template>
-                    设为当前
+                    启用
                   </a-button>
                   <a-button
                     v-if="isInstalled('pg', record.version) && isCurrent('pg', record.version)"
@@ -845,17 +849,14 @@ onUnmounted(() => {
                     size="small"
                     @click="unsetCurrent('pg')"
                   >
-                    <template #icon>
-                      <icon-check />
-                    </template>
-                    取消当前
+                    停用
                   </a-button>
                   <a-popconfirm
                     content="确定要卸载此版本吗？"
                     @ok="uninstall('pg', record.version)"
                   >
                     <a-button
-                      v-if="isInstalled('pg', record.version)"
+                      v-if="isInstalled('pg', record.version) && !isCurrent('pg', record.version)"
                       type="outline"
                       status="danger"
                       size="small"
@@ -892,10 +893,7 @@ onUnmounted(() => {
                     size="small"
                     @click="useVer('pg', record.version || record)"
                   >
-                    <template #icon>
-                      <icon-check />
-                    </template>
-                    设为当前
+                    启用
                   </a-button>
                   <a-button
                     v-if="
@@ -906,17 +904,17 @@ onUnmounted(() => {
                     size="small"
                     @click="unsetCurrent('pg')"
                   >
-                    <template #icon>
-                      <icon-check />
-                    </template>
-                    取消当前
+                    停用
                   </a-button>
                   <a-popconfirm
                     content="确定要卸载此版本吗？"
                     @ok="uninstall('pg', record.version || record)"
                   >
                     <a-button
-                      v-if="isInstalled('pg', record.version || record)"
+                      v-if="
+                        isInstalled('pg', record.version || record) &&
+                        !isCurrent('pg', record.version || record)
+                      "
                       type="outline"
                       status="danger"
                       size="small"
