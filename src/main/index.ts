@@ -1,11 +1,8 @@
-import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
+import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { detectPlatform } from './envhub/platform'
-import { loadManifest, resolveArtifactPath, selectArtifact } from './envhub/manifest'
-import { bundlesManifestPath, toolchainRoot } from './envhub/paths'
-import { sha256File } from './envhub/checksum'
-import { extractArchive } from './envhub/extract'
+import { toolchainRoot } from './envhub/paths'
 import { installPython } from './envhub/installers/python'
-import { installNode, installPnpmFromTgz } from './envhub/installers/node'
+import { installNode } from './envhub/installers/node'
 import {
   installPostgres,
   initDb,
@@ -13,11 +10,9 @@ import {
   createUser,
   createDatabase
 } from './envhub/installers/pg'
-import { installPgVector } from './envhub/pgvector'
 import { logInfo } from './envhub/log'
 import { enableAutostartMac, enableAutostartWindows } from './envhub/autostart'
 import { spawn } from 'child_process'
-import { installPythonTools } from './envhub/installers/python'
 import {
   getCurrent,
   listInstalled,
@@ -92,17 +87,6 @@ app.whenReady().then(() => {
   // IPC test
   ipcMain.on('ping', () => console.log('pong'))
 
-  // 文件选择对话框
-  ipcMain.handle('envhub:selectDirectory', async () => {
-    const result = await dialog.showOpenDialog({
-      properties: ['openDirectory'],
-      title: '选择离线包目录',
-      buttonLabel: '选择'
-    })
-    if (result.canceled) return null
-    return result.filePaths[0]
-  })
-
   // PATH 环境变量管理
   ipcMain.handle('envhub:path:check', () => {
     return isPathConfigured()
@@ -124,86 +108,6 @@ app.whenReady().then(() => {
 
   // EnvHub IPC handlers (MVP, offline bundle driven)
   ipcMain.handle('envhub:detectPlatform', () => detectPlatform())
-
-  ipcMain.handle('envhub:manifest:load', (_evt, args: { bundleDir: string }) => {
-    logInfo(`Loading manifest from ${args.bundleDir}`)
-    return loadManifest(bundlesManifestPath(args.bundleDir))
-  })
-
-  ipcMain.handle(
-    'envhub:installFromBundle',
-    async (
-      _evt,
-      args: {
-        bundleDir: string
-        python?: string
-        node?: string
-        pg?: string // full version, e.g. 16.4
-        pnpmPathInBundle?: string
-      }
-    ) => {
-      const dp = detectPlatform()
-      logInfo(`Detected platform ${JSON.stringify(dp)}`)
-      const manifest = loadManifest(bundlesManifestPath(args.bundleDir))
-      const result: Record<string, any> = { platform: dp }
-
-      if (args.python) {
-        logInfo(`Installing Python ${args.python}`)
-        const art = selectArtifact(manifest, 'python', args.python, dp.platformKey)
-        // verify hash
-        const artifactPath = resolveArtifactPath(args.bundleDir, art)
-        const sum = await sha256File(artifactPath)
-        if (sum.toLowerCase() !== art.sha256.toLowerCase())
-          throw new Error('Python artifact checksum mismatch')
-        await installPython({
-          version: args.python,
-          platform: dp,
-          bundleDir: args.bundleDir,
-          artifact: art
-        })
-        logInfo(`Python ${args.python} installed`)
-        result.python = { version: args.python }
-      }
-
-      if (args.node) {
-        logInfo(`Installing Node ${args.node}`)
-        const art = selectArtifact(manifest, 'node', args.node, dp.platformKey)
-        const artifactPath = resolveArtifactPath(args.bundleDir, art)
-        const sum = await sha256File(artifactPath)
-        if (sum.toLowerCase() !== art.sha256.toLowerCase())
-          throw new Error('Node artifact checksum mismatch')
-        await installNode({
-          version: args.node,
-          platform: dp,
-          bundleDir: args.bundleDir,
-          artifact: art,
-          pnpmPathInBundle: args.pnpmPathInBundle
-        })
-        logInfo(`Node ${args.node} installed`)
-        result.node = { version: args.node }
-      }
-
-      if (args.pg) {
-        logInfo(`Installing PostgreSQL ${args.pg}`)
-        const art = selectArtifact(manifest, 'pg', args.pg, dp.platformKey)
-        const artifactPath = resolveArtifactPath(args.bundleDir, art)
-        const sum = await sha256File(artifactPath)
-        if (sum.toLowerCase() !== art.sha256.toLowerCase())
-          throw new Error('PostgreSQL artifact checksum mismatch')
-        const { binDir, dataDir } = await installPostgres({
-          version: args.pg,
-          platform: dp,
-          bundleDir: args.bundleDir,
-          artifact: art
-        })
-        logInfo(`PostgreSQL ${args.pg} installed and initialized`)
-        if (dataDir) logInfo(`Data directory: ${dataDir}`)
-        result.pg = { version: args.pg, binDir, dataDir }
-      }
-
-      return result
-    }
-  )
 
   // 软件管理：查询已安装、设为当前、卸载、单项安装
   ipcMain.handle('envhub:installed:list', () => {
@@ -306,97 +210,6 @@ app.whenReady().then(() => {
   )
 
   ipcMain.handle(
-    'envhub:install:one',
-    async (_evt, args: { bundleDir: string; tool: 'python' | 'node' | 'pg'; version: string }) => {
-      const dp = detectPlatform()
-      const manifest = loadManifest(bundlesManifestPath(args.bundleDir))
-      logInfo(`Install one ${args.tool}@${args.version}`)
-      if (args.tool === 'python') {
-        const art = selectArtifact(manifest, 'python', args.version, dp.platformKey)
-        const sum = await sha256File(resolveArtifactPath(args.bundleDir, art))
-        if (sum.toLowerCase() !== art.sha256.toLowerCase()) throw new Error('checksum mismatch')
-        await installPython({
-          version: args.version,
-          platform: dp,
-          bundleDir: args.bundleDir,
-          artifact: art
-        })
-      } else if (args.tool === 'node') {
-        const art = selectArtifact(manifest, 'node', args.version, dp.platformKey)
-        const sum = await sha256File(resolveArtifactPath(args.bundleDir, art))
-        if (sum.toLowerCase() !== art.sha256.toLowerCase()) throw new Error('checksum mismatch')
-        await installNode({
-          version: args.version,
-          platform: dp,
-          bundleDir: args.bundleDir,
-          artifact: art
-        })
-      } else if (args.tool === 'pg') {
-        const art = selectArtifact(manifest, 'pg', args.version, dp.platformKey)
-        const sum = await sha256File(resolveArtifactPath(args.bundleDir, art))
-        if (sum.toLowerCase() !== art.sha256.toLowerCase()) throw new Error('checksum mismatch')
-        const { binDir, dataDir } = await installPostgres({
-          version: args.version,
-          platform: dp,
-          bundleDir: args.bundleDir,
-          artifact: art
-        })
-        logInfo(`PostgreSQL ${args.version} installed and initialized`)
-        if (dataDir) logInfo(`Data directory: ${dataDir}`)
-        return { ok: true, binDir, dataDir }
-      }
-      return { ok: true }
-    }
-  )
-
-  ipcMain.handle(
-    'envhub:python:installTools',
-    async (
-      _evt,
-      args: {
-        pythonVersion: string
-        bundleDir?: string
-        wheelsDir?: string
-        wheelsDirRelative?: string
-        packages?: string[]
-      }
-    ) => {
-      const dp = detectPlatform()
-      const wheelsDir =
-        args.wheelsDir ||
-        (args.bundleDir && args.wheelsDirRelative
-          ? resolveArtifactPath(args.bundleDir, { file: args.wheelsDirRelative, sha256: '' })
-          : undefined)
-      if (!wheelsDir) throw new Error('wheelsDir not provided')
-      logInfo(`Installing Python tools ${args.packages?.join(',') || 'pipx,uv'} from ${wheelsDir}`)
-      await installPythonTools({
-        pythonVersion: args.pythonVersion,
-        platform: dp,
-        wheelsDir,
-        packages: args.packages
-      })
-      logInfo('Python tools installed')
-      return { ok: true }
-    }
-  )
-
-  ipcMain.handle(
-    'envhub:node:installPnpm',
-    async (_evt, args: { nodeVersion: string; bundleDir: string; pnpmTgzRelative: string }) => {
-      const dp = detectPlatform()
-      logInfo(`Installing pnpm from ${args.pnpmTgzRelative}`)
-      const entry = await installPnpmFromTgz({
-        nodeVersion: args.nodeVersion,
-        platform: dp,
-        bundleDir: args.bundleDir,
-        pnpmTgzRelative: args.pnpmTgzRelative
-      })
-      logInfo(`pnpm installed, entry ${entry}`)
-      return { ok: true, entry }
-    }
-  )
-
-  ipcMain.handle(
     'envhub:pg:initStart',
     async (
       _evt,
@@ -416,24 +229,6 @@ app.whenReady().then(() => {
       logInfo(`Starting PostgreSQL cluster at ${dataDir}`)
       await pgStart(binDir, dataDir)
       return { dataDir, binDir }
-    }
-  )
-
-  ipcMain.handle(
-    'envhub:pg:installVector',
-    async (_evt, args: { bundleDir: string; pgVersion: string; pgMajor: string }) => {
-      const dp = detectPlatform()
-      const manifest = loadManifest(bundlesManifestPath(args.bundleDir))
-      const art = selectArtifact(manifest, 'pgvector', args.pgMajor, dp.platformKey)
-      const artifactPath = resolveArtifactPath(args.bundleDir, art)
-      const sum = await sha256File(artifactPath)
-      if (sum.toLowerCase() !== art.sha256.toLowerCase())
-        throw new Error('pgvector artifact checksum mismatch')
-      const pgBase = toolchainRoot('pg', args.pgVersion, dp)
-      logInfo(`Installing pgvector for PG ${args.pgMajor}`)
-      await installPgVector({ bundleDir: args.bundleDir, artifact: art, pgRootDir: pgBase })
-      logInfo(`pgvector installed`)
-      return { ok: true }
     }
   )
 
