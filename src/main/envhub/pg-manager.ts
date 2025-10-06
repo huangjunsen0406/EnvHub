@@ -2,8 +2,6 @@ import { spawn, exec } from 'child_process'
 import { promisify } from 'util'
 import { existsSync } from 'fs'
 import { join } from 'path'
-import { toolchainRoot, pgDataDir } from './paths'
-import { DetectedPlatform } from './platform'
 
 const execAsync = promisify(exec)
 
@@ -18,7 +16,7 @@ export interface PgCluster {
 /**
  * 获取所有 PostgreSQL 集群
  */
-export async function listPgClusters(dp: DetectedPlatform): Promise<PgCluster[]> {
+export async function listPgClusters(): Promise<PgCluster[]> {
   // TODO: 实现扫描所有集群的逻辑
   // 目前返回空数组
   return []
@@ -123,7 +121,7 @@ export async function pgRestart(binDir: string, dataDir: string): Promise<void> 
  * 获取 PostgreSQL 状态信息
  */
 export async function getPgStatus(
-  binDir: string,
+  _binDir: string,
   dataDir: string
 ): Promise<{
   running: boolean
@@ -145,12 +143,13 @@ export async function getPgStatus(
     const lines = content.split('\n')
 
     const pid = parseInt(lines[0], 10)
-    const port = lines[3] ? parseInt(lines[3], 10) : undefined
+    const portStr = lines[3]
+    const port = portStr ? parseInt(portStr, 10) : undefined
 
     return {
       running: true,
       pid: isNaN(pid) ? undefined : pid,
-      port: isNaN(port) ? undefined : port,
+      port: port !== undefined && !isNaN(port) ? port : undefined,
       dataDir
     }
   } catch {

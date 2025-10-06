@@ -10,75 +10,162 @@ export interface OnlineVersion {
 
 /**
  * 获取 Python 在线版本列表
- * 返回官方安装器下载链接，用户需要手动点击安装
+ * 从 nppmirror 的 python-build-standalone 获取预编译版本
  */
 export async function fetchPythonVersions(platform: DetectedPlatform): Promise<OnlineVersion[]> {
-  // Python 常用版本列表
-  const commonVersions = [
-    '3.13.1',
-    '3.13.0',
-    '3.12.8',
-    '3.12.7',
-    '3.12.6',
-    '3.12.5',
-    '3.12.4',
-    '3.12.3',
-    '3.12.2',
-    '3.12.1',
-    '3.12.0',
-    '3.11.11',
-    '3.11.10',
-    '3.11.9',
-    '3.11.8',
-    '3.11.7',
-    '3.11.6',
-    '3.11.5',
-    '3.11.4',
-    '3.11.3',
-    '3.11.2',
-    '3.11.1',
-    '3.11.0',
-    '3.10.16',
-    '3.10.15',
-    '3.10.14',
-    '3.10.13',
-    '3.10.12',
-    '3.10.11',
-    '3.10.10',
-    '3.10.9',
-    '3.10.8',
-    '3.10.7',
-    '3.10.6',
-    '3.10.5'
-  ]
+  try {
+    // 获取所有发布批次
+    const releasesUrl = 'https://registry.npmmirror.com/-/binary/python-build-standalone/'
+    const releases = await fetchJSON(releasesUrl)
 
-  const versions: OnlineVersion[] = []
+    if (!Array.isArray(releases) || releases.length === 0) {
+      console.warn('No Python releases found')
+      return []
+    }
 
-  for (const version of commonVersions) {
-    const url = buildPythonInstallerUrl(version, platform)
-    versions.push({
-      version,
-      url,
-      date: new Date().toISOString()
+    const platformKey = platform.platformKey
+    const versionMap = new Map<string, { url: string; date: string }>()
+
+    // 遍历所有发布批次（最近 150 个批次，覆盖更多历史版本）
+    const recentReleases = releases.slice(-150).reverse()
+
+    for (const release of recentReleases) {
+      if (release.type !== 'dir') continue
+
+      const releaseDate = release.name.replace('/', '')
+      const filesUrl = `https://registry.npmmirror.com/-/binary/python-build-standalone/${releaseDate}/`
+
+      try {
+        const files = await fetchJSON(filesUrl)
+        if (!Array.isArray(files)) continue
+
+        // 从该批次中提取所有符合平台的 Python 文件
+        const matchedFiles = selectAllPythonFiles(files, platformKey)
+
+        for (const file of matchedFiles) {
+          const pythonVersion = parsePythonVersion(file.name)
+          if (!pythonVersion) continue
+
+          // 只保留每个版本的最新构建（第一次遇到的就是最新的，因为我们倒序遍历）
+          if (!versionMap.has(pythonVersion)) {
+            versionMap.set(pythonVersion, {
+              url: file.url,
+              date: release.date
+            })
+          }
+        }
+      } catch (err) {
+        // 忽略单个批次的错误，继续处理其他批次
+        console.warn(`Failed to fetch files for ${releaseDate}:`, err)
+      }
+    }
+
+    // 转换为数组并按版本号降序排序
+    const versions: OnlineVersion[] = Array.from(versionMap.entries()).map(
+      ([version, { url, date }]) => ({
+        version,
+        url,
+        date
+      })
+    )
+
+    // 按版本号降序排序（3.13.1 > 3.13.0 > 3.12.8 ...）
+    versions.sort((a, b) => {
+      const [aMajor, aMinor, aPatch] = a.version.split('.').map(Number)
+      const [bMajor, bMinor, bPatch] = b.version.split('.').map(Number)
+
+      if (aMajor !== bMajor) return bMajor - aMajor
+      if (aMinor !== bMinor) return bMinor - aMinor
+      return bPatch - aPatch
     })
-  }
 
-  return versions
+    return versions
+  } catch (error) {
+    console.error('Failed to fetch Python versions:', error)
+    return []
+  }
 }
 
 /**
- * 构建 Python 官方安装器下载链接
+ * 从文件列表中选择所有适合当前平台的 Python 文件
+ * 每个版本选择最优变体
  */
-function buildPythonInstallerUrl(version: string, platform: DetectedPlatform): string {
-  const baseUrl = 'https://www.python.org/ftp/python'
-
-  if (platform.os === 'mac') {
-    // macOS 通用安装包（支持 Intel 和 Apple Silicon）
-    return `${baseUrl}/${version}/python-${version}-macos11.pkg`
-  } else {
-    // Windows 64位安装程序
-    return `${baseUrl}/${version}/python-${version}-amd64.exe`
+function selectAllPythonFiles(
+  files: any[],
+  platformKey: string
+): Array<{ name: string; url: string }> {
+  // 定义平台映射和优先级
+  const platformPatterns: Record<string, { patterns: string[]; preferredVariant: string[] }> = {
+    'darwin-arm64': {
+      patterns: ['aarch64-apple-darwin', 'arm64-apple-darwin'],
+      preferredVariant: ['install_only', 'pgo+lto', 'pgo']
+    },
+    'darwin-x64': {
+      patterns: ['x86_64-apple-darwin'],
+      preferredVariant: ['install_only', 'pgo+lto', 'pgo']
+    },
+    'win-x64': {
+      patterns: ['x86_64-pc-windows-msvc'],
+      preferredVariant: ['shared-install_only', 'shared-pgo', 'shared']
+    }
   }
+
+  const config = platformPatterns[platformKey]
+  if (!config) return []
+
+  // 过滤出匹配平台的所有文件
+  const candidates = files.filter((file) => {
+    if (file.type !== 'file') return false
+    if (!file.name.endsWith('.tar.zst') && !file.name.endsWith('.tar.gz')) return false
+
+    return config.patterns.some((pattern) => file.name.includes(pattern))
+  })
+
+  // 按版本分组
+  const versionGroups = new Map<string, any[]>()
+  for (const file of candidates) {
+    const version = parsePythonVersion(file.name)
+    if (!version) continue
+
+    if (!versionGroups.has(version)) {
+      versionGroups.set(version, [])
+    }
+    versionGroups.get(version)!.push(file)
+  }
+
+  // 为每个版本选择最优变体
+  const result: Array<{ name: string; url: string }> = []
+  for (const [, filesForVersion] of versionGroups) {
+    // 按优先级选择变体
+    let selected: any = null
+    for (const variant of config.preferredVariant) {
+      const match = filesForVersion.find((f) => f.name.includes(variant))
+      if (match) {
+        selected = match
+        break
+      }
+    }
+
+    // 如果没有找到首选变体，使用第一个
+    if (!selected && filesForVersion.length > 0) {
+      selected = filesForVersion[0]
+    }
+
+    if (selected) {
+      result.push({ name: selected.name, url: selected.url })
+    }
+  }
+
+  return result
+}
+
+/**
+ * 从文件名中解析 Python 版本号
+ * 例如：cpython-3.12.0-x86_64-apple-darwin-install_only-20231002T1853.tar.zst -> 3.12.0
+ */
+function parsePythonVersion(filename: string): string | null {
+  const match = filename.match(/cpython-(\d+\.\d+\.\d+)/)
+  return match ? match[1] : null
 }
 
 /**
@@ -213,61 +300,13 @@ function buildPostgresInstallerUrl(version: string, platform: DetectedPlatform):
   return `https://get.enterprisedb.com/postgresql/postgresql-${version}-1-${platformStr}-binaries.zip`
 }
 
-/**
- * 通用的 GitHub Releases 获取
- */
-async function fetchGitHubReleases(owner: string, repo: string): Promise<any[]> {
-  const url = `https://api.github.com/repos/${owner}/${repo}/releases`
-
-  return new Promise((resolve, reject) => {
-    httpsGet(
-      url,
-      {
-        headers: {
-          'User-Agent': 'EnvHub/1.0',
-          Accept: 'application/vnd.github.v3+json'
-        },
-        timeout: 10000
-      },
-      (response) => {
-        // 处理重定向
-        if (response.statusCode === 301 || response.statusCode === 302) {
-          const redirectUrl = response.headers.location
-          if (redirectUrl) {
-            return httpsGet(redirectUrl, { headers: { 'User-Agent': 'EnvHub/1.0' } }, resolve).on(
-              'error',
-              reject
-            )
-          }
-        }
-
-        let data = ''
-        response.on('data', (chunk) => {
-          data += chunk
-        })
-        response.on('end', () => {
-          try {
-            const parsed = JSON.parse(data)
-            resolve(Array.isArray(parsed) ? parsed : [])
-          } catch (error) {
-            console.error('Failed to parse GitHub response:', data.substring(0, 200))
-            resolve([]) // 返回空数组而不是失败
-          }
-        })
-      }
-    ).on('error', (err) => {
-      console.error('GitHub API error:', err)
-      resolve([]) // 返回空数组而不是失败
-    })
-  })
-}
 
 /**
  * 通用的 JSON 获取
  */
 async function fetchJSON(url: string): Promise<any> {
   return new Promise((resolve, reject) => {
-    httpsGet(
+    const request = httpsGet(
       url,
       {
         headers: {
@@ -281,7 +320,8 @@ async function fetchJSON(url: string): Promise<any> {
         if (response.statusCode === 301 || response.statusCode === 302) {
           const redirectUrl = response.headers.location
           if (redirectUrl) {
-            return fetchJSON(redirectUrl).then(resolve).catch(reject)
+            fetchJSON(redirectUrl).then(resolve).catch(reject)
+            return
           }
         }
 
@@ -294,13 +334,15 @@ async function fetchJSON(url: string): Promise<any> {
             resolve(JSON.parse(data))
           } catch (error) {
             console.error('Failed to parse JSON response:', data.substring(0, 200))
-            resolve([]) // 返回空数组
+            reject(error)
           }
         })
       }
-    ).on('error', (err) => {
+    )
+
+    request.on('error', (err) => {
       console.error('Fetch JSON error:', err)
-      resolve([]) // 返回空数组
+      reject(err)
     })
   })
 }

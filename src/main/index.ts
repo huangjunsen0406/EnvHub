@@ -402,16 +402,18 @@ app.whenReady().then(() => {
 
         logInfo(`Download completed: ${savePath}`)
 
-        // Python: 只下载安装器，不自动打开
-        if (tool === 'python') {
-          logInfo(`Python installer downloaded: ${savePath}`)
-          return { ok: true, savePath, message: '安装器已下载' }
-        }
-
-        // Node.js 和 PostgreSQL: 自动解压并安装
+        // 自动解压并安装所有工具（包括 Python）
         logInfo(`Extracting and installing ${tool} ${version}`)
 
-        if (tool === 'node') {
+        if (tool === 'python') {
+          const { installPython } = await import('./envhub/installers/python')
+          await installPython({
+            version,
+            platform: dp,
+            bundleDir: cacheDir(),
+            artifact: { file: fileName, sha256: '' }
+          })
+        } else if (tool === 'node') {
           await installNode({
             version,
             platform: dp,
@@ -427,7 +429,12 @@ app.whenReady().then(() => {
           })
         }
 
-        logInfo(`${tool} ${version} installed successfully`)
+        // 安装完成后自动设置为当前版本
+        logInfo(`Setting ${tool} ${version} as current version`)
+        setCurrent(tool, version)
+        updateShimsForTool(tool, version, dp)
+
+        logInfo(`${tool} ${version} installed successfully and set as current`)
         return { ok: true, savePath }
       } catch (error: any) {
         logInfo(`Download failed: ${error.message}`)

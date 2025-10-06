@@ -37,7 +37,6 @@ const state = reactive({
 
 const onlineVersions = computed(() => toolsStore.onlineVersions)
 const installed = computed(() => toolsStore.installed)
-const downloadedInstallers = computed(() => toolsStore.downloadedInstallers)
 
 function showInstallProgress(tool: string, version: string): void {
   state.installProgress = {
@@ -100,10 +99,6 @@ function isInstalled(tool: Tool, v: string): boolean {
 
 function isCurrent(tool: Tool, v: string): boolean {
   return installed.value.current?.[tool] === v
-}
-
-function isPythonInstallerDownloaded(version: string): boolean {
-  return !!downloadedInstallers.value?.python?.[version]
 }
 
 async function useVer(tool: Tool, v: string): Promise<void> {
@@ -195,15 +190,9 @@ async function installOnline(tool: Tool, version: string, url: string): Promise<
         url
       })
 
-      if (tool === 'python') {
-        await toolsStore.loadDownloadedInstallers()
-        updateInstallProgress('安装包下载完成！', 'success')
-        Message.success(`Python ${version} 安装包已下载`)
-      } else {
-        updateInstallProgress('下载并安装完成！', 'success')
-        Message.success(`${tool} ${version} 安装完成`)
-        await refreshInstalled()
-      }
+      updateInstallProgress('下载并安装完成！', 'success')
+      Message.success(`${tool} ${version} 安装完成`)
+      await refreshInstalled()
       hideInstallProgress()
     } finally {
       window.electron.ipcRenderer.removeAllListeners('envhub:download:progress')
@@ -217,43 +206,9 @@ async function installOnline(tool: Tool, version: string, url: string): Promise<
   }
 }
 
-async function openPythonInstaller(version: string): Promise<void> {
-  const installerPath = downloadedInstallers.value?.python?.[version]
-  if (!installerPath) {
-    Message.error('安装包不存在')
-    return
-  }
-  try {
-    await window.electron.ipcRenderer.invoke('envhub:python:openInstaller', { path: installerPath })
-    Message.success('已打开安装器，请按照向导完成安装')
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : '未知错误'
-    Message.error(`打开安装器失败：${message}`)
-  }
-}
-
-async function deletePythonInstaller(version: string): Promise<void> {
-  const installerPath = downloadedInstallers.value?.python?.[version]
-  if (!installerPath) {
-    Message.error('安装包不存在')
-    return
-  }
-  try {
-    await window.electron.ipcRenderer.invoke('envhub:python:deleteInstaller', {
-      path: installerPath
-    })
-    await toolsStore.loadDownloadedInstallers()
-    Message.success('安装包已删除')
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : '未知错误'
-    Message.error(`删除失败：${message}`)
-  }
-}
-
 onMounted(async () => {
   try {
     await refreshInstalled()
-    toolsStore.loadDownloadedInstallers()
 
     if (!toolsStore.versionsLoaded.python) {
       await fetchOnlineVersions().catch((err) => {
@@ -288,12 +243,6 @@ onUnmounted(() => {
             <template #status="{ record }">
               <a-space>
                 <a-tag v-if="isInstalled('python', record.version)" color="green">已安装</a-tag>
-                <a-tag
-                  v-else-if="isPythonInstallerDownloaded(record.version)"
-                  color="orange"
-                >
-                  已下载
-                </a-tag>
                 <a-tag v-else color="gray">未安装</a-tag>
                 <a-tag v-if="isCurrent('python', record.version)" color="blue">当前版本</a-tag>
                 <a-tag v-if="record.date" color="arcoblue">
@@ -303,9 +252,8 @@ onUnmounted(() => {
             </template>
             <template #actions="{ record }">
               <a-space>
-                <!-- 未下载：显示下载按钮 -->
                 <a-button
-                  v-if="!isPythonInstallerDownloaded(record.version)"
+                  v-if="!isInstalled('python', record.version)"
                   type="primary"
                   size="small"
                   :loading="state.installingVersions[`python-${record.version}`]"
@@ -314,25 +262,40 @@ onUnmounted(() => {
                   <template #icon>
                     <icon-cloud-download />
                   </template>
-                  下载安装包
+                  安装
                 </a-button>
-                <!-- 已下载：显示安装和删除按钮 -->
-                <template v-else>
-                  <a-button type="primary" size="small" @click="openPythonInstaller(record.version)">
-                    安装
-                  </a-button>
-                  <a-popconfirm
-                    content="确定要删除此安装包吗？"
-                    @ok="deletePythonInstaller(record.version)"
+                <a-button
+                  v-if="isInstalled('python', record.version) && !isCurrent('python', record.version)"
+                  type="outline"
+                  size="small"
+                  @click="useVer('python', record.version)"
+                >
+                  启用
+                </a-button>
+                <a-button
+                  v-if="isInstalled('python', record.version) && isCurrent('python', record.version)"
+                  type="outline"
+                  size="small"
+                  @click="unsetCurrent('python')"
+                >
+                  停用
+                </a-button>
+                <a-popconfirm
+                  content="确定要卸载此版本吗？"
+                  @ok="uninstall('python', record.version)"
+                >
+                  <a-button
+                    v-if="isInstalled('python', record.version) && !isCurrent('python', record.version)"
+                    type="outline"
+                    status="danger"
+                    size="small"
                   >
-                    <a-button type="outline" status="danger" size="small">
-                      <template #icon>
-                        <icon-delete />
-                      </template>
-                      删除
-                    </a-button>
-                  </a-popconfirm>
-                </template>
+                    <template #icon>
+                      <icon-delete />
+                    </template>
+                    卸载
+                  </a-button>
+                </a-popconfirm>
               </a-space>
             </template>
           </a-table>

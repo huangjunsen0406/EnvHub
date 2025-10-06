@@ -1,6 +1,9 @@
-import { mkdirSync } from 'fs'
-import { dirname, extname } from 'path'
+import { mkdirSync, createWriteStream } from 'fs'
+import { extname, join, dirname } from 'path'
 import { spawn } from 'child_process'
+import { extract as tarExtract } from 'tar'
+import { ZstdCodec } from 'zstd-codec'
+import { extract as tarStreamExtract } from 'tar-stream'
 
 function run(cmd: string, args: string[]): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -13,6 +16,7 @@ function run(cmd: string, args: string[]): Promise<void> {
 export async function extractArchive(archivePath: string, destDir: string): Promise<void> {
   mkdirSync(destDir, { recursive: true })
   const ext = extname(archivePath).toLowerCase()
+
   if (ext === '.zip') {
     if (process.platform === 'win32') {
       // Use PowerShell Expand-Archive on Windows
@@ -28,15 +32,68 @@ export async function extractArchive(archivePath: string, destDir: string): Prom
     }
     return
   }
+
   if (archivePath.endsWith('.tar.gz') || archivePath.endsWith('.tgz')) {
-    await run('tar', ['-xzf', archivePath, '-C', destDir])
+    await tarExtract({ file: archivePath, cwd: destDir })
     return
   }
+
+  if (archivePath.endsWith('.tar.zst')) {
+    // 使用 Node.js 包解压 zstd 压缩的 tar 文件
+    // 支持 Windows 和 macOS，无需额外安装系统工具
+    await extractTarZst(archivePath, destDir)
+    return
+  }
+
   if (archivePath.endsWith('.tar')) {
-    await run('tar', ['-xf', archivePath, '-C', destDir])
+    await tarExtract({ file: archivePath, cwd: destDir })
     return
   }
+
   throw new Error(`Unsupported archive format: ${archivePath}`)
+}
+
+/**
+ * 使用 Node.js 包解压 .tar.zst 文件
+ */
+async function extractTarZst(archivePath: string, destDir: string): Promise<void> {
+  const ZstdCodecModule = await ZstdCodec.run((zstd) => ({
+    decompress: (data: Uint8Array) => zstd.decompress(data)
+  }))
+
+  return new Promise((resolve, reject) => {
+    const fs = require('fs')
+    const fileData = fs.readFileSync(archivePath)
+    const decompressed = ZstdCodecModule.decompress(new Uint8Array(fileData))
+    const extract = tarStreamExtract()
+
+    extract.on('entry', (header, stream, next) => {
+      const fullPath = join(destDir, header.name)
+
+      if (header.type === 'directory') {
+        mkdirSync(fullPath, { recursive: true })
+        stream.resume()
+        next()
+      } else if (header.type === 'file') {
+        mkdirSync(dirname(fullPath), { recursive: true })
+        const writeStream = createWriteStream(fullPath, { mode: header.mode })
+        stream.pipe(writeStream)
+        stream.on('end', next)
+        stream.on('error', reject)
+      } else {
+        stream.resume()
+        next()
+      }
+    })
+
+    extract.on('finish', resolve)
+    extract.on('error', reject)
+
+    // Write decompressed data to extract stream
+    const { Readable } = require('stream')
+    const readable = Readable.from(Buffer.from(decompressed))
+    readable.pipe(extract)
+  })
 }
 
 export async function removeQuarantineAttr(targetDir: string): Promise<void> {

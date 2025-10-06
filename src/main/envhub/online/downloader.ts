@@ -176,8 +176,8 @@ export function formatTime(seconds: number): string {
 }
 
 /**
- * 扫描下载目录，查找已下载的 Python 安装包
- * PostgreSQL 和 Node.js 使用压缩包，会自动安装，不需要扫描
+ * 扫描下载目录，查找已下载的包
+ * Python、Node.js 和 PostgreSQL 现在都使用预编译包，可以自动安装
  */
 export function scanDownloadedInstallers(): {
   python: Record<string, string>
@@ -204,10 +204,9 @@ export function scanDownloadedInstallers(): {
       // 只处理文件，忽略目录
       if (!stat.isFile()) continue
 
-      // Python 安装包匹配
-      // Windows: python-3.12.0-amd64.exe
-      // macOS: python-3.12.0-macos11.pkg
-      const pythonMatch = file.match(/^python-(\d+\.\d+\.\d+)-(?:amd64\.exe|macos11\.pkg)$/)
+      // Python 预编译包匹配
+      // cpython-3.12.0-x86_64-apple-darwin-install_only-20231002T1853.tar.zst
+      const pythonMatch = file.match(/^cpython-(\d+\.\d+\.\d+)-.*\.tar\.(?:zst|gz)$/)
       if (pythonMatch) {
         const version = pythonMatch[1]
         result.python[version] = fullPath

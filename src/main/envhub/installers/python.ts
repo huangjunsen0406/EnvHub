@@ -62,31 +62,47 @@ export async function installPython(opts: PythonInstallOptions): Promise<string>
 
   // Guess binary locations
   const binDir = process.platform === 'win32' ? baseDir : findBinDir(baseDir)
-  const pythonExe =
-    process.platform === 'win32' ? join(binDir, 'python.exe') : join(binDir, 'python3')
 
-  // 如果 python3 不存在，尝试 python
-  if (!fs.existsSync(pythonExe) && process.platform !== 'win32') {
-    const altPython = join(binDir, 'python')
-    if (fs.existsSync(altPython)) {
-      const pythonExe = altPython
+  let finalPythonExe: string
+
+  if (process.platform === 'win32') {
+    finalPythonExe = join(binDir, 'python.exe')
+  } else {
+    // Unix: 优先使用 python，如果不存在则使用 python3
+    const pythonPath = join(binDir, 'python')
+    const python3Path = join(binDir, 'python3')
+
+    if (fs.existsSync(pythonPath)) {
+      finalPythonExe = pythonPath
+    } else if (fs.existsSync(python3Path)) {
+      // 如果只有 python3，创建 python 符号链接
+      try {
+        fs.symlinkSync('python3', pythonPath)
+        finalPythonExe = pythonPath
+      } catch (error) {
+        console.warn('Failed to create python symlink:', error)
+        finalPythonExe = python3Path
+      }
+    } else {
+      // 都不存在，使用 python3 作为默认值（后续会报错）
+      finalPythonExe = python3Path
     }
   }
 
   // Ensure pip is available
   try {
-    await runPython(pythonExe, ['-m', 'ensurepip', '--upgrade'])
+    await runPython(finalPythonExe, ['-m', 'ensurepip', '--upgrade'])
   } catch (error) {
     console.warn('Failed to ensure pip, it may already be installed:', error)
   }
 
   // Create shims for python and pip (pip via -m to avoid path guessing)
   writeShims(opts.platform, [
-    { name: 'python', target: pythonExe },
-    { name: 'pip', target: pythonExe, args: ['-m', 'pip'] }
+    { name: 'python', target: finalPythonExe },
+    { name: 'pip', target: finalPythonExe, args: ['-m', 'pip'] }
   ])
 
-  return pythonExe
+  return finalPythonExe
 }
 
 function findBinDir(baseDir: string): string {
