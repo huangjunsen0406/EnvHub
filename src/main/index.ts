@@ -342,18 +342,19 @@ app.whenReady().then(() => {
   // 在线安装：获取版本列表
   ipcMain.handle(
     'envhub:online:fetchVersions',
-    async (_evt, args: { tool: 'python' | 'node' | 'pg' }) => {
+    async (_evt, args: { tool: 'python' | 'node' | 'pg'; forceRefresh?: boolean }) => {
       const dp = detectPlatform()
-      logInfo(`Fetching online versions for ${args.tool}`)
+      const forceRefresh = args.forceRefresh || false
+      logInfo(`Fetching online versions for ${args.tool}${forceRefresh ? ' (force refresh)' : ''}`)
 
       try {
         let versions
         if (args.tool === 'python') {
-          versions = await fetchPythonVersions(dp)
+          versions = await fetchPythonVersions(dp, forceRefresh)
         } else if (args.tool === 'node') {
-          versions = await fetchNodeVersions(dp)
+          versions = await fetchNodeVersions(dp, forceRefresh)
         } else if (args.tool === 'pg') {
-          versions = await fetchPostgresVersions(dp)
+          versions = await fetchPostgresVersions(dp, forceRefresh)
         }
 
         logInfo(`Found ${versions?.length || 0} ${args.tool} versions`)
@@ -429,12 +430,16 @@ app.whenReady().then(() => {
           })
         }
 
-        // 安装完成后自动设置为当前版本
-        logInfo(`Setting ${tool} ${version} as current version`)
-        setCurrent(tool, version)
-        updateShimsForTool(tool, version, dp)
+        // Python 安装后不自动激活，Node/PostgreSQL 自动激活
+        if (tool !== 'python') {
+          logInfo(`Setting ${tool} ${version} as current version`)
+          setCurrent(tool, version)
+          updateShimsForTool(tool, version, dp)
+          logInfo(`${tool} ${version} installed successfully and set as current`)
+        } else {
+          logInfo(`${tool} ${version} installed successfully`)
+        }
 
-        logInfo(`${tool} ${version} installed successfully and set as current`)
         return { ok: true, savePath }
       } catch (error: any) {
         logInfo(`Download failed: ${error.message}`)

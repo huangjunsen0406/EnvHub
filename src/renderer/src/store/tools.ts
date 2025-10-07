@@ -51,25 +51,29 @@ export const useToolsStore = defineStore('tools', () => {
   })
 
   // 获取在线版本列表
-  async function fetchOnlineVersions(tool?: 'python' | 'node' | 'pg') {
+  async function fetchOnlineVersions(tool?: 'python' | 'node' | 'pg', forceRefresh = false) {
     const tools = tool ? [tool] : (['python', 'node', 'pg'] as const)
 
-    for (const t of tools) {
-      // 如果已加载过，跳过
-      if (versionsLoaded.value[t] && !tool) continue
+    // 并行请求所有需要加载的工具
+    const promises = tools
+      .filter((t) => tool || forceRefresh || !versionsLoaded.value[t]) // 如果已加载过且不是强制刷新，跳过
+      .map(async (t) => {
+        try {
+          const versions = await window.electron.ipcRenderer.invoke(
+            'envhub:online:fetchVersions',
+            { tool: t, forceRefresh }
+          )
+          onlineVersions.value[t] = versions || []
+          versionsLoaded.value[t] = true
+        } catch (error) {
+          console.error(`Failed to fetch ${t} versions:`, error)
+          onlineVersions.value[t] = []
+          versionsLoaded.value[t] = false
+        }
+      })
 
-      try {
-        const versions = await window.electron.ipcRenderer.invoke('envhub:online:fetchVersions', {
-          tool: t
-        })
-        onlineVersions.value[t] = versions || []
-        versionsLoaded.value[t] = true
-      } catch (error) {
-        console.error(`Failed to fetch ${t} versions:`, error)
-        onlineVersions.value[t] = []
-        versionsLoaded.value[t] = false
-      }
-    }
+    // 等待所有请求完成（即使部分失败也不影响其他）
+    await Promise.allSettled(promises)
   }
 
   // 刷新已安装工具列表

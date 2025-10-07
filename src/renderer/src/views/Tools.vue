@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref, reactive, onMounted, onUnmounted, computed } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, computed, watch } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import {
   IconDelete,
-  IconCloudDownload
+  IconCloudDownload,
+  IconRefresh
 } from '@arco-design/web-vue/es/icon'
 import { useToolsStore } from '../store/tools'
 
@@ -72,17 +73,25 @@ const columns = [
   { title: '操作', slotName: 'actions' }
 ]
 
-async function fetchOnlineVersions(tool?: Tool): Promise<void> {
+async function fetchOnlineVersions(tool?: Tool, forceRefresh = false): Promise<void> {
   try {
     state.fetchingVersions = true
-    await toolsStore.fetchOnlineVersions(tool)
-    Message.success('在线版本列表已更新')
+    await toolsStore.fetchOnlineVersions(tool, forceRefresh)
+    if (forceRefresh) {
+      Message.success('版本列表已刷新')
+    } else {
+      Message.success('在线版本列表已更新')
+    }
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : '未知错误'
     Message.error(`获取版本列表失败：${message}`)
   } finally {
     state.fetchingVersions = false
   }
+}
+
+async function refreshVersions(tool: Tool): Promise<void> {
+  await fetchOnlineVersions(tool, true)
 }
 
 async function refreshInstalled(): Promise<void> {
@@ -206,15 +215,49 @@ async function installOnline(tool: Tool, version: string, url: string): Promise<
   }
 }
 
-onMounted(async () => {
-  try {
-    await refreshInstalled()
+// 后台预加载其他工具版本（不阻塞当前 tab）
+function preloadOtherTools(currentTool: Tool): void {
+  const otherTools: Tool[] = ['python', 'node', 'pg'].filter((t) => t !== currentTool) as Tool[]
 
-    if (!toolsStore.versionsLoaded.python) {
-      await fetchOnlineVersions().catch((err) => {
-        console.error('Failed to fetch online versions:', err)
+  otherTools.forEach((tool) => {
+    if (!toolsStore.versionsLoaded[tool]) {
+      fetchOnlineVersions(tool).catch((err) => {
+        console.error(`Background preload failed for ${tool}:`, err)
       })
     }
+  })
+}
+
+// 监听 tab 切换，按需加载版本列表
+watch(activeTab, async (newTab) => {
+  if (!toolsStore.versionsLoaded[newTab]) {
+    try {
+      state.fetchingVersions = true
+      await fetchOnlineVersions(newTab)
+    } catch (error) {
+      console.error(`Failed to fetch ${newTab} versions on tab switch:`, error)
+    } finally {
+      state.fetchingVersions = false
+    }
+  }
+})
+
+onMounted(async () => {
+  try {
+    // 1. 先加载已安装列表（快速）
+    await refreshInstalled()
+
+    // 2. 立即加载当前 tab 的版本（阻塞显示，但只加载一个工具）
+    if (!toolsStore.versionsLoaded[activeTab.value]) {
+      state.fetchingVersions = true
+      await fetchOnlineVersions(activeTab.value).catch((err) => {
+        console.error(`Failed to fetch ${activeTab.value} versions:`, err)
+      })
+      state.fetchingVersions = false
+    }
+
+    // 3. 后台异步预加载其他 tab（不阻塞 UI）
+    preloadOtherTools(activeTab.value)
   } catch (error) {
     console.error('Failed to initialize Tools page:', error)
   }
@@ -234,6 +277,20 @@ onUnmounted(() => {
           <template #icon>
             <span style="font-size: 18px">🐍</span>
           </template>
+
+          <div style="margin-bottom: 16px">
+            <a-button
+              type="outline"
+              size="small"
+              :loading="state.fetchingVersions"
+              @click="refreshVersions('python')"
+            >
+              <template #icon>
+                <icon-refresh />
+              </template>
+              刷新版本列表
+            </a-button>
+          </div>
 
           <a-table
             :columns="columns"
@@ -307,6 +364,20 @@ onUnmounted(() => {
             <span style="font-size: 18px">📦</span>
           </template>
 
+          <div style="margin-bottom: 16px">
+            <a-button
+              type="outline"
+              size="small"
+              :loading="state.fetchingVersions"
+              @click="refreshVersions('node')"
+            >
+              <template #icon>
+                <icon-refresh />
+              </template>
+              刷新版本列表
+            </a-button>
+          </div>
+
           <a-table
             :columns="columns"
             :data="versionsOf('node')"
@@ -378,6 +449,20 @@ onUnmounted(() => {
           <template #icon>
             <span style="font-size: 18px">🐘</span>
           </template>
+
+          <div style="margin-bottom: 16px">
+            <a-button
+              type="outline"
+              size="small"
+              :loading="state.fetchingVersions"
+              @click="refreshVersions('pg')"
+            >
+              <template #icon>
+                <icon-refresh />
+              </template>
+              刷新版本列表
+            </a-button>
+          </div>
 
           <a-table
             :columns="columns"

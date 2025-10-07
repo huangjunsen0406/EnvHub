@@ -4,7 +4,6 @@ import { DetectedPlatform } from '../platform'
 import { toolchainRoot } from '../paths'
 import { ArtifactRef } from '../manifest'
 import { extractArchive, removeQuarantineAttr } from '../extract'
-import { writeShims } from '../shims'
 import { spawn } from 'child_process'
 
 export interface PythonInstallOptions {
@@ -96,12 +95,7 @@ export async function installPython(opts: PythonInstallOptions): Promise<string>
     console.warn('Failed to ensure pip, it may already be installed:', error)
   }
 
-  // Create shims for python and pip (pip via -m to avoid path guessing)
-  writeShims(opts.platform, [
-    { name: 'python', target: finalPythonExe },
-    { name: 'pip', target: finalPythonExe, args: ['-m', 'pip'] }
-  ])
-
+  // Note: Shims will be created when user activates this version via updateShimsForTool
   return finalPythonExe
 }
 

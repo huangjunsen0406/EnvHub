@@ -1,5 +1,8 @@
 import { get as httpsGet } from 'https'
 import { DetectedPlatform } from '../platform'
+import { join } from 'path'
+import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
+import { envhubRoot } from '../paths'
 
 export interface OnlineVersion {
   version: string
@@ -8,11 +11,103 @@ export interface OnlineVersion {
   date?: string
 }
 
+interface CacheEntry {
+  timestamp: number
+  data: OnlineVersion[]
+}
+
+interface VersionCache {
+  python?: CacheEntry
+  node?: CacheEntry
+  pg?: CacheEntry
+}
+
+// 缓存有效期：24 小时（毫秒）
+const CACHE_TTL = 24 * 60 * 60 * 1000
+
+/**
+ * 获取缓存文件路径
+ */
+function getCachePath(): string {
+  const cacheDir = join(envhubRoot(), 'cache')
+  mkdirSync(cacheDir, { recursive: true })
+  return join(cacheDir, 'versions-cache.json')
+}
+
+/**
+ * 读取缓存
+ */
+function readCache(): VersionCache {
+  try {
+    const cachePath = getCachePath()
+    if (!existsSync(cachePath)) return {}
+    const content = readFileSync(cachePath, 'utf-8')
+    return JSON.parse(content) as VersionCache
+  } catch (error) {
+    console.warn('Failed to read cache:', error)
+    return {}
+  }
+}
+
+/**
+ * 写入缓存
+ */
+function writeCache(cache: VersionCache): void {
+  try {
+    const cachePath = getCachePath()
+    writeFileSync(cachePath, JSON.stringify(cache, null, 2), 'utf-8')
+  } catch (error) {
+    console.error('Failed to write cache:', error)
+  }
+}
+
+/**
+ * 获取指定工具的缓存（如果有效）
+ */
+function getCachedVersions(tool: 'python' | 'node' | 'pg'): OnlineVersion[] | null {
+  const cache = readCache()
+  const entry = cache[tool]
+
+  if (!entry) return null
+
+  const now = Date.now()
+  const age = now - entry.timestamp
+
+  if (age > CACHE_TTL) {
+    console.log(`Cache expired for ${tool} (age: ${Math.round(age / 1000 / 60)} minutes)`)
+    return null
+  }
+
+  console.log(`Using cached versions for ${tool} (age: ${Math.round(age / 1000 / 60)} minutes)`)
+  return entry.data
+}
+
+/**
+ * 保存版本列表到缓存
+ */
+function setCachedVersions(tool: 'python' | 'node' | 'pg', versions: OnlineVersion[]): void {
+  const cache = readCache()
+  cache[tool] = {
+    timestamp: Date.now(),
+    data: versions
+  }
+  writeCache(cache)
+}
+
 /**
  * 获取 Python 在线版本列表
  * 从 nppmirror 的 python-build-standalone 获取预编译版本
  */
-export async function fetchPythonVersions(platform: DetectedPlatform): Promise<OnlineVersion[]> {
+export async function fetchPythonVersions(
+  platform: DetectedPlatform,
+  forceRefresh = false
+): Promise<OnlineVersion[]> {
+  // 检查缓存（除非强制刷新）
+  if (!forceRefresh) {
+    const cached = getCachedVersions('python')
+    if (cached) return cached
+  }
+
   try {
     // 获取所有发布批次
     const releasesUrl = 'https://registry.npmmirror.com/-/binary/python-build-standalone/'
@@ -26,38 +121,47 @@ export async function fetchPythonVersions(platform: DetectedPlatform): Promise<O
     const platformKey = platform.platformKey
     const versionMap = new Map<string, { url: string; date: string }>()
 
-    // 遍历所有发布批次（最近 150 个批次，覆盖更多历史版本）
-    const recentReleases = releases.slice(-150).reverse()
+    // 只遍历最近 30 个批次（覆盖最近 1-2 年的版本，大幅提升速度）
+    const recentReleases = releases.slice(-30).reverse()
 
-    for (const release of recentReleases) {
-      if (release.type !== 'dir') continue
+    // 并行请求批次（每次处理 10 个），加速获取
+    const BATCH_SIZE = 10
+    for (let i = 0; i < recentReleases.length; i += BATCH_SIZE) {
+      const batch = recentReleases.slice(i, i + BATCH_SIZE)
 
-      const releaseDate = release.name.replace('/', '')
-      const filesUrl = `https://registry.npmmirror.com/-/binary/python-build-standalone/${releaseDate}/`
+      const batchPromises = batch.map(async (release) => {
+        if (release.type !== 'dir') return
 
-      try {
-        const files = await fetchJSON(filesUrl)
-        if (!Array.isArray(files)) continue
+        const releaseDate = release.name.replace('/', '')
+        const filesUrl = `https://registry.npmmirror.com/-/binary/python-build-standalone/${releaseDate}/`
 
-        // 从该批次中提取所有符合平台的 Python 文件
-        const matchedFiles = selectAllPythonFiles(files, platformKey)
+        try {
+          const files = await fetchJSON(filesUrl)
+          if (!Array.isArray(files)) return
 
-        for (const file of matchedFiles) {
-          const pythonVersion = parsePythonVersion(file.name)
-          if (!pythonVersion) continue
+          // 从该批次中提取所有符合平台的 Python 文件
+          const matchedFiles = selectAllPythonFiles(files, platformKey)
 
-          // 只保留每个版本的最新构建（第一次遇到的就是最新的，因为我们倒序遍历）
-          if (!versionMap.has(pythonVersion)) {
-            versionMap.set(pythonVersion, {
-              url: file.url,
-              date: release.date
-            })
+          for (const file of matchedFiles) {
+            const pythonVersion = parsePythonVersion(file.name)
+            if (!pythonVersion) continue
+
+            // 只保留每个版本的最新构建（第一次遇到的就是最新的，因为我们倒序遍历）
+            if (!versionMap.has(pythonVersion)) {
+              versionMap.set(pythonVersion, {
+                url: file.url,
+                date: release.date
+              })
+            }
           }
+        } catch (err) {
+          // 忽略单个批次的错误，继续处理其他批次
+          console.warn(`Failed to fetch files for ${releaseDate}:`, err)
         }
-      } catch (err) {
-        // 忽略单个批次的错误，继续处理其他批次
-        console.warn(`Failed to fetch files for ${releaseDate}:`, err)
-      }
+      })
+
+      // 等待当前批次完成
+      await Promise.allSettled(batchPromises)
     }
 
     // 转换为数组并按版本号降序排序
@@ -78,6 +182,9 @@ export async function fetchPythonVersions(platform: DetectedPlatform): Promise<O
       if (aMinor !== bMinor) return bMinor - aMinor
       return bPatch - aPatch
     })
+
+    // 保存到缓存
+    setCachedVersions('python', versions)
 
     return versions
   } catch (error) {
@@ -171,7 +278,16 @@ function parsePythonVersion(filename: string): string | null {
 /**
  * 获取 Node.js 在线版本列表
  */
-export async function fetchNodeVersions(platform: DetectedPlatform): Promise<OnlineVersion[]> {
+export async function fetchNodeVersions(
+  platform: DetectedPlatform,
+  forceRefresh = false
+): Promise<OnlineVersion[]> {
+  // 检查缓存（除非强制刷新）
+  if (!forceRefresh) {
+    const cached = getCachedVersions('node')
+    if (cached) return cached
+  }
+
   try {
     // 使用淘宝镜像 API（更快）
     const indexUrl = 'https://npmmirror.com/mirrors/node/index.json'
@@ -208,6 +324,9 @@ export async function fetchNodeVersions(platform: DetectedPlatform): Promise<Onl
       })
     }
 
+    // 保存到缓存
+    setCachedVersions('node', versions)
+
     return versions
   } catch (error) {
     console.error('Failed to fetch Node.js versions:', error)
@@ -219,7 +338,15 @@ export async function fetchNodeVersions(platform: DetectedPlatform): Promise<Onl
  * 获取 PostgreSQL 在线版本列表
  * 返回 EDB 官方安装器下载链接
  */
-export async function fetchPostgresVersions(platform: DetectedPlatform): Promise<OnlineVersion[]> {
+export async function fetchPostgresVersions(
+  platform: DetectedPlatform,
+  forceRefresh = false
+): Promise<OnlineVersion[]> {
+  // 检查缓存（除非强制刷新）
+  if (!forceRefresh) {
+    const cached = getCachedVersions('pg')
+    if (cached) return cached
+  }
   // PostgreSQL 常用版本列表（EDB 提供的版本）
   const commonVersions = [
     '17.2',
@@ -272,6 +399,9 @@ export async function fetchPostgresVersions(platform: DetectedPlatform): Promise
       date: new Date().toISOString()
     })
   }
+
+  // 保存到缓存
+  setCachedVersions('pg', versions)
 
   return versions
 }
