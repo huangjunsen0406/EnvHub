@@ -73,14 +73,16 @@ const columns = [
   { title: '操作', slotName: 'actions' }
 ]
 
-async function fetchOnlineVersions(tool?: Tool, forceRefresh = false): Promise<void> {
+async function fetchOnlineVersions(tool?: Tool, forceRefresh = false, silent = false): Promise<void> {
   try {
     state.fetchingVersions = true
     await toolsStore.fetchOnlineVersions(tool, forceRefresh)
-    if (forceRefresh) {
-      Message.success('版本列表已刷新')
-    } else {
-      Message.success('在线版本列表已更新')
+    if (!silent) {
+      if (forceRefresh) {
+        Message.success('版本列表已刷新')
+      } else {
+        Message.success('在线版本列表已更新')
+      }
     }
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : '未知错误'
@@ -215,19 +217,6 @@ async function installOnline(tool: Tool, version: string, url: string): Promise<
   }
 }
 
-// 后台预加载其他工具版本（不阻塞当前 tab）
-function preloadOtherTools(currentTool: Tool): void {
-  const otherTools: Tool[] = ['python', 'node', 'pg'].filter((t) => t !== currentTool) as Tool[]
-
-  otherTools.forEach((tool) => {
-    if (!toolsStore.versionsLoaded[tool]) {
-      fetchOnlineVersions(tool).catch((err) => {
-        console.error(`Background preload failed for ${tool}:`, err)
-      })
-    }
-  })
-}
-
 // 监听 tab 切换，按需加载版本列表
 watch(activeTab, async (newTab) => {
   if (!toolsStore.versionsLoaded[newTab]) {
@@ -247,17 +236,19 @@ onMounted(async () => {
     // 1. 先加载已安装列表（快速）
     await refreshInstalled()
 
-    // 2. 立即加载当前 tab 的版本（阻塞显示，但只加载一个工具）
-    if (!toolsStore.versionsLoaded[activeTab.value]) {
-      state.fetchingVersions = true
-      await fetchOnlineVersions(activeTab.value).catch((err) => {
-        console.error(`Failed to fetch ${activeTab.value} versions:`, err)
-      })
-      state.fetchingVersions = false
-    }
-
-    // 3. 后台异步预加载其他 tab（不阻塞 UI）
-    preloadOtherTools(activeTab.value)
+    // 2. 并行加载所有工具的在线版本，只有当前 tab 显示提示
+    state.fetchingVersions = true
+    const tools: Tool[] = ['python', 'node', 'pg']
+    await Promise.all(
+      tools.map((tool) =>
+        !toolsStore.versionsLoaded[tool]
+          ? fetchOnlineVersions(tool, false, tool !== activeTab.value).catch((err) => {
+              console.error(`Failed to fetch ${tool} versions:`, err)
+            })
+          : Promise.resolve()
+      )
+    )
+    state.fetchingVersions = false
   } catch (error) {
     console.error('Failed to initialize Tools page:', error)
   }

@@ -37,12 +37,9 @@ onMounted(async () => {
   // 获取已安装工具
   const installed = await window.electron.ipcRenderer.invoke('envhub:installed:list')
 
-  // Python 显示已下载的安装包数量（在线模式）
-  const downloadedCount = Object.keys(toolsStore.downloadedInstallers.python || {}).length
-  toolStatus.value[0].installed = downloadedCount
+  // 所有工具显示已安装的版本数量
+  toolStatus.value[0].installed = installed.python?.length || 0
   toolStatus.value[0].current = installed.current?.python || '-'
-
-  // Node.js 和 PostgreSQL 显示已安装的版本数量
   toolStatus.value[1].installed = installed.node?.length || 0
   toolStatus.value[1].current = installed.current?.node || '-'
   toolStatus.value[2].installed = installed.pg?.length || 0

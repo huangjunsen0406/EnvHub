@@ -10,6 +10,7 @@ function winCmdShimBody(exePath: string, args: string[] = []): string {
 
 function unixShimBody(exePath: string, args: string[] = []): string {
   const quoted = `'${exePath.replace(/'/g, "'\\''")}' ${args.join(' ')}`.trim()
+  // eslint-disable-next-line no-useless-escape
   return `#!/usr/bin/env bash\nexec ${quoted} \"$@\"\n`
 }
 
