@@ -1,0 +1,231 @@
+name: Build Redis Binaries
+
+on:
+  workflow_dispatch:
+    inputs:
+      redis_versions:
+        description: 'Redis versions to build (comma-separated, e.g., 7.2.11,8.0.4,8.2.2)'
+        required: true
+        default: '6.2.20,7.0.15,7.2.11,7.4.6,8.0.4,8.2.2'
+  schedule:
+    - cron: '0 2 * * 0'  # 每周日检查更新
+
+jobs:
+  parse-versions:
+    runs-on: ubuntu-latest
+    outputs:
+      versions: ${{ steps.parse.outputs.versions }}
+    steps:
+      - name: Parse version list
+        id: parse
+        run: |
+          if [ -n "${{ github.event.inputs.redis_versions }}" ]; then
+            VERSIONS="${{ github.event.inputs.redis_versions }}"
+          else
+            # 自动获取最新的稳定版本
+            VERSIONS=$(curl -s "https://api.github.com/repos/redis/redis/tags?per_page=100" | \
+              jq -r '.[].name' | \
+              grep -E '^[678]\.[0-9]+\.[0-9]+$' | \
+              sort -V | \
+              tail -6 | \
+              tr '\n' ',' | \
+              sed 's/,$//')
+          fi
+
+          # 转换为 JSON 数组
+          VERSIONS_JSON=$(echo "$VERSIONS" | jq -R 'split(",") | map(select(length > 0))')
+          echo "versions=$VERSIONS_JSON" >> $GITHUB_OUTPUT
+          echo "Will build Redis versions: $VERSIONS_JSON"
+
+  build-redis:
+    needs: parse-versions
+    strategy:
+      fail-fast: false
+      matrix:
+        version: ${{ fromJson(needs.parse-versions.outputs.versions) }}
+        include:
+          # Windows x64
+          - os: windows-latest
+            platform: win-x64
+            archive_ext: zip
+
+          # macOS Apple Silicon
+          - os: macos-14
+            platform: darwin-arm64
+            archive_ext: tar.gz
+
+          # macOS Intel
+          - os: macos-13
+            platform: darwin-x64
+            archive_ext: tar.gz
+
+          # Linux x64
+          - os: ubuntu-20.04
+            platform: linux-x64
+            archive_ext: tar.gz
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check if release exists
+        id: check
+        continue-on-error: true
+        run: |
+          if gh release view redis-${{ matrix.version }} --repo ${{ github.repository }} >/dev/null 2>&1; then
+            ASSETS=$(gh release view redis-${{ matrix.version }} --repo ${{ github.repository }} --json assets -q '.assets[].name')
+            if echo "$ASSETS" | grep -q "${{ matrix.platform }}"; then
+              echo "exists=true" >> $GITHUB_OUTPUT
+              echo "Asset for ${{ matrix.platform }} already exists"
+            else
+              echo "exists=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download Redis source
+        if: steps.check.outputs.exists != 'true'
+        run: |
+          VERSION=${{ matrix.version }}
+          curl -fSL "https://download.redis.io/releases/redis-${VERSION}.tar.gz" -o redis.tar.gz
+          tar xzf redis.tar.gz
+          mv redis-${VERSION} redis-src
+        shell: bash
+
+      # Unix 构建 (macOS & Linux)
+      - name: Build Redis (Unix)
+        if: steps.check.outputs.exists != 'true' && runner.os != 'Windows'
+        run: |
+          cd redis-src
+
+          # 根据系统决定编译参数
+          if [ "$(uname)" = "Darwin" ]; then
+            # macOS: 使用 libc malloc
+            make BUILD_TLS=yes MALLOC=libc -j$(sysctl -n hw.ncpu)
+          else
+            # Linux: 使用 jemalloc
+            make BUILD_TLS=yes -j$(nproc)
+          fi
+
+          # 安装到临时目录
+          make PREFIX=$PWD/install install
+
+          # 复制配置文件
+          mkdir -p install/etc
+          cp redis.conf install/etc/
+          cp sentinel.conf install/etc/ 2>/dev/null || true
+
+          # 创建日志和数据目录占位符
+          mkdir -p install/var/log install/var/lib
+
+          # 打包
+          cd install
+          tar czf ../../redis-${{ matrix.version }}-${{ matrix.platform }}.tar.gz .
+        shell: bash
+
+      # Windows 构建
+      - name: Setup MSYS2 (Windows)
+        if: steps.check.outputs.exists != 'true' && runner.os == 'Windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
+            make
+
+      - name: Build Redis (Windows)
+        if: steps.check.outputs.exists != 'true' && runner.os == 'Windows'
+        shell: msys2 {0}
+        run: |
+          cd redis-src
+
+          # Windows 编译
+          make -j$(nproc)
+
+          # 创建安装目录结构
+          mkdir -p install/bin install/etc
+
+          # 复制二进制文件
+          cp src/redis-server.exe install/bin/
+          cp src/redis-cli.exe install/bin/
+          cp src/redis-benchmark.exe install/bin/
+          cp src/redis-check-aof.exe install/bin/
+          cp src/redis-check-rdb.exe install/bin/
+
+          # 复制配置文件 (Windows 特定配置)
+          if [ -f redis.windows-service.conf ]; then
+            cp redis.windows-service.conf install/etc/redis.conf
+          else
+            cp redis.conf install/etc/
+          fi
+
+          # 打包
+          cd install
+          7z a ../../redis-${{ matrix.version }}-${{ matrix.platform }}.zip .
+
+      # 生成校验和
+      - name: Generate checksums
+        if: steps.check.outputs.exists != 'true'
+        run: |
+          if [ "${{ runner.os }}" == "Windows" ]; then
+            EXT="zip"
+          else
+            EXT="tar.gz"
+          fi
+
+          FILE="redis-${{ matrix.version }}-${{ matrix.platform }}.${EXT}"
+          sha256sum "$FILE" | tee "redis-${{ matrix.version }}-${{ matrix.platform }}.sha256"
+        shell: bash
+
+      # 上传到 GitHub Release
+      - name: Upload to GitHub Release
+        if: steps.check.outputs.exists != 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: redis-${{ matrix.version }}
+          name: Redis ${{ matrix.version }}
+          draft: false
+          prerelease: false
+          body: |
+            Redis ${{ matrix.version }} 预编译包
+
+            ## 平台支持
+            - Windows x64
+            - macOS Apple Silicon (ARM64)
+            - macOS Intel (x64)
+            - Linux x64
+
+            ## 包含组件
+            - redis-server
+            - redis-cli
+            - redis-benchmark
+            - redis-check-aof
+            - redis-check-rdb
+
+            ## 自动构建
+            由 GitHub Actions 自动构建和发布
+          files: |
+            redis-${{ matrix.version }}-${{ matrix.platform }}.*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  summary:
+    needs: [parse-versions, build-redis]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build Summary
+        run: |
+          echo "## Redis 构建完成 ✅" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "已构建版本: ${{ needs.parse-versions.outputs.versions }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "平台支持:" >> $GITHUB_STEP_SUMMARY
+          echo "- Windows x64" >> $GITHUB_STEP_SUMMARY
+          echo "- macOS ARM64" >> $GITHUB_STEP_SUMMARY
+          echo "- macOS x64" >> $GITHUB_STEP_SUMMARY
+          echo "- Linux x64" >> $GITHUB_STEP_SUMMARY
