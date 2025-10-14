@@ -14,7 +14,8 @@ const systemInfo = ref({
 const toolStatus = ref([
   { name: 'Python', current: '-', installed: 0, icon: '🐍', color: '#3776ab' },
   { name: 'Node.js', current: '-', installed: 0, icon: '📦', color: '#339933' },
-  { name: 'PostgreSQL', current: '-', installed: 0, icon: '🐘', color: '#336791' }
+  { name: 'PostgreSQL', current: '-', installed: 0, icon: '🐘', color: '#336791' },
+  { name: 'Java', current: '-', installed: 0, icon: '☕', color: '#007396' }
 ])
 
 const pathStatus = ref({
@@ -44,6 +45,8 @@ onMounted(async () => {
   toolStatus.value[1].current = installed.current?.node || '-'
   toolStatus.value[2].installed = installed.pg?.length || 0
   toolStatus.value[2].current = installed.current?.pg || '-'
+  toolStatus.value[3].installed = installed.java?.length || 0
+  toolStatus.value[3].current = installed.current?.java || '-'
 
   // 检查 PATH 状态
   try {
@@ -56,7 +59,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="dashboard">
+  <div class="max-w-[1400px] mx-auto">
     <a-row :gutter="16">
       <a-col :span="24">
         <a-card title="系统信息" :bordered="false">
@@ -75,23 +78,23 @@ onMounted(async () => {
       </a-col>
     </a-row>
 
-    <a-row :gutter="16" style="margin-top: 16px">
-      <a-col :span="8" v-for="tool in toolStatus" :key="tool.name">
+    <a-row :gutter="16" class="mt-4">
+      <a-col v-for="tool in toolStatus" :key="tool.name" :span="6">
         <a-card :bordered="false" hoverable>
-          <div class="tool-card">
-            <div class="tool-header">
-              <span class="tool-icon">{{ tool.icon }}</span>
-              <span class="tool-name">{{ tool.name }}</span>
+          <div class="p-2">
+            <div class="flex items-center gap-3 mb-2">
+              <span class="text-[32px]">{{ tool.icon }}</span>
+              <span class="text-lg font-semibold">{{ tool.name }}</span>
             </div>
             <a-divider />
-            <a-space direction="vertical" :size="12" style="width: 100%">
-              <div class="tool-info">
-                <span class="info-label">当前版本：</span>
+            <a-space direction="vertical" :size="12" class="w-full">
+              <div class="flex items-center gap-2">
+                <span class="text-gray-500 text-sm">当前版本：</span>
                 <a-tag v-if="tool.current !== '-'" color="green">{{ tool.current }}</a-tag>
-                <span v-else class="text-secondary">未设置</span>
+                <span v-else class="text-gray-500">未设置</span>
               </div>
-              <div class="tool-info">
-                <span class="info-label">已安装：</span>
+              <div class="flex items-center gap-2">
+                <span class="text-gray-500 text-sm">已安装：</span>
                 <a-tag>{{ tool.installed }} 个版本</a-tag>
               </div>
             </a-space>
@@ -100,7 +103,7 @@ onMounted(async () => {
       </a-col>
     </a-row>
 
-    <a-row :gutter="16" style="margin-top: 16px">
+    <a-row :gutter="16" class="mt-4">
       <a-col :span="24">
         <a-card title="PATH 环境变量" :bordered="false">
           <a-alert v-if="!pathStatus.configured" type="info" closable>
@@ -119,39 +122,60 @@ onMounted(async () => {
       </a-col>
     </a-row>
 
-    <a-row :gutter="16" style="margin-top: 16px">
+    <a-row :gutter="16" class="mt-4">
       <a-col :span="24">
         <a-card title="快速开始" :bordered="false">
-          <a-space direction="vertical" :size="16" style="width: 100%">
-            <div class="step-item">
-              <div class="step-number">1</div>
-              <div class="step-content">
-                <h4>选择工具版本</h4>
-                <p>前往"工具管理"页面，浏览 Python、Node.js、PostgreSQL 的在线版本列表</p>
+          <a-space direction="vertical" :size="16" class="w-full">
+            <div class="flex gap-4 items-start">
+              <div
+                class="w-8 h-8 rounded-full bg-[#165dff] text-white flex items-center justify-center font-semibold flex-shrink-0"
+              >
+                1
               </div>
-            </div>
-            <div class="step-item">
-              <div class="step-number">2</div>
-              <div class="step-content">
-                <h4>下载并安装</h4>
-                <p>
-                  点击"安装"按钮下载工具（Python 需要手动运行安装器，Node.js 和 PostgreSQL
-                  自动安装）
+              <div class="flex-1">
+                <h4 class="m-0 mb-1 text-[15px] font-medium">选择工具版本</h4>
+                <p class="m-0 text-gray-500 text-sm">
+                  前往"工具管理"页面，浏览 Python、Node.js、PostgreSQL、Java 的在线版本列表
                 </p>
               </div>
             </div>
-            <div class="step-item">
-              <div class="step-number">3</div>
-              <div class="step-content">
-                <h4>启用工具</h4>
-                <p>安装完成后，点击"启用"按钮设置为当前版本（自动配置 PATH 环境变量）</p>
+            <div class="flex gap-4 items-start">
+              <div
+                class="w-8 h-8 rounded-full bg-[#165dff] text-white flex items-center justify-center font-semibold flex-shrink-0"
+              >
+                2
+              </div>
+              <div class="flex-1">
+                <h4 class="m-0 mb-1 text-[15px] font-medium">下载并安装</h4>
+                <p class="m-0 text-gray-500 text-sm">
+                  点击"安装"按钮下载工具（Python 需要手动运行安装器，其他工具自动安装）
+                </p>
               </div>
             </div>
-            <div class="step-item">
-              <div class="step-number">4</div>
-              <div class="step-content">
-                <h4>开始使用</h4>
-                <p>重启终端后，直接使用 python、node、psql 等命令（停用工具会移除环境变量）</p>
+            <div class="flex gap-4 items-start">
+              <div
+                class="w-8 h-8 rounded-full bg-[#165dff] text-white flex items-center justify-center font-semibold flex-shrink-0"
+              >
+                3
+              </div>
+              <div class="flex-1">
+                <h4 class="m-0 mb-1 text-[15px] font-medium">启用工具</h4>
+                <p class="m-0 text-gray-500 text-sm">
+                  安装完成后，点击"启用"按钮设置为当前版本（自动配置 PATH 环境变量）
+                </p>
+              </div>
+            </div>
+            <div class="flex gap-4 items-start">
+              <div
+                class="w-8 h-8 rounded-full bg-[#165dff] text-white flex items-center justify-center font-semibold flex-shrink-0"
+              >
+                4
+              </div>
+              <div class="flex-1">
+                <h4 class="m-0 mb-1 text-[15px] font-medium">开始使用</h4>
+                <p class="m-0 text-gray-500 text-sm">
+                  重启终端后，直接使用 python、node、psql、java 等命令（停用工具会移除环境变量）
+                </p>
               </div>
             </div>
           </a-space>
@@ -160,76 +184,3 @@ onMounted(async () => {
     </a-row>
   </div>
 </template>
-
-<style scoped>
-.dashboard {
-  max-width: 1400px;
-  margin: 0 auto;
-}
-
-.tool-card {
-  padding: 8px;
-}
-
-.tool-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 8px;
-}
-
-.tool-icon {
-  font-size: 32px;
-}
-
-.tool-name {
-  font-size: 18px;
-  font-weight: 600;
-}
-
-.tool-info {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.info-label {
-  color: #86909c;
-  font-size: 14px;
-}
-
-.text-secondary {
-  color: #86909c;
-}
-
-.step-item {
-  display: flex;
-  gap: 16px;
-  align-items: flex-start;
-}
-
-.step-number {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: #165dff;
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 600;
-  flex-shrink: 0;
-}
-
-.step-content h4 {
-  margin: 0 0 4px 0;
-  font-size: 15px;
-  font-weight: 500;
-}
-
-.step-content p {
-  margin: 0;
-  color: #86909c;
-  font-size: 14px;
-}
-</style>
