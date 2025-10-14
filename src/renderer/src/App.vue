@@ -9,7 +9,7 @@ import {
   IconMenuUnfold
 } from '@arco-design/web-vue/es/icon'
 import Dashboard from './views/Dashboard.vue'
-import Tools from './views/Tools.vue'
+import Tools from './views/Tools/index.vue'
 import Settings from './views/Settings.vue'
 import Logs from './views/Logs.vue'
 import { useLogsStore } from './store/logs'

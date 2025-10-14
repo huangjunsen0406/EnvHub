@@ -1,6 +1,6 @@
 import { ref, computed } from 'vue'
 import { Message } from '@arco-design/web-vue'
-import { useToolsStore } from '../store/tools'
+import { useToolsStore } from '../../../store/tools'
 
 export type Tool = 'python' | 'node' | 'pg' | 'java'
 

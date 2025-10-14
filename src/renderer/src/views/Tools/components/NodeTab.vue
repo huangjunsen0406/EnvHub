@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { IconDelete, IconCloudDownload, IconRefresh } from '@arco-design/web-vue/es/icon'
-import { useToolVersion } from '../../composables/useToolVersion'
+import { useToolVersion } from '../composables/useToolVersion'
 
 const {
   fetchingVersions,

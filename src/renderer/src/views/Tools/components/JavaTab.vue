@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
 import { IconDelete, IconCloudDownload, IconRefresh } from '@arco-design/web-vue/es/icon'
-import { useToolVersion } from '../../composables/useToolVersion'
+import { useToolVersion } from '../composables/useToolVersion'
 
 const {
   fetchingVersions,
@@ -14,17 +13,13 @@ const {
   unsetCurrent,
   uninstall,
   installOnline
-} = useToolVersion('python')
+} = useToolVersion('java')
 
 const columns = [
   { title: '版本', dataIndex: 'version', width: 150 },
   { title: '状态', slotName: 'status', width: 200 },
   { title: '操作', slotName: 'actions' }
 ]
-
-onMounted(() => {
-  // Tab 组件挂载时不自动加载，由父组件控制
-})
 </script>
 
 <template>
@@ -48,6 +43,7 @@ onMounted(() => {
           <a-tag v-if="isInstalled(record.version)" color="green">已安装</a-tag>
           <a-tag v-else color="gray">未安装</a-tag>
           <a-tag v-if="isCurrent(record.version)" color="blue">当前版本</a-tag>
+          <a-tag v-if="record.lts" color="orange">LTS</a-tag>
           <a-tag v-if="record.date" color="arcoblue">
             {{ new Date(record.date).toLocaleDateString() }}
           </a-tag>
@@ -59,7 +55,7 @@ onMounted(() => {
             v-if="!isInstalled(record.version)"
             type="primary"
             size="small"
-            :loading="installingVersions[`python-${record.version}`]"
+            :loading="installingVersions[`java-${record.version}`]"
             @click="installOnline(record.version, record.url)"
           >
             <template #icon>

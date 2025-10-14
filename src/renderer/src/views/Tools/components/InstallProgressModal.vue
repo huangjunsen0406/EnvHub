@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { InstallProgress } from '../../composables/useToolVersion'
+import type { InstallProgress } from '../composables/useToolVersion'
 
 interface Props {
   progress: InstallProgress

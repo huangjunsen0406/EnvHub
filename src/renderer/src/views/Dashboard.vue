@@ -79,8 +79,8 @@ onMounted(async () => {
     </a-row>
 
     <a-row :gutter="16" class="mt-4">
-      <a-col v-for="tool in toolStatus" :key="tool.name" :span="6">
-        <a-card :bordered="false" hoverable>
+      <a-col v-for="tool in toolStatus" :key="tool.name" :xs="24" :sm="12" :md="8" :lg="6">
+        <a-card :bordered="false" hoverable class="mb-4">
           <div class="p-2">
             <div class="flex items-center gap-3 mb-2">
               <span class="text-[32px]">{{ tool.icon }}</span>

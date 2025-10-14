@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { useToolsStore } from '../store/tools'
-import PythonTab from '../components/tools/PythonTab.vue'
-import NodeTab from '../components/tools/NodeTab.vue'
-import PostgresTab from '../components/tools/PostgresTab.vue'
-import JavaTab from '../components/tools/JavaTab.vue'
+import { useToolsStore } from '../../store/tools'
+import PythonTab from './components/PythonTab.vue'
+import NodeTab from './components/NodeTab.vue'
+import PostgresTab from './components/PostgresTab.vue'
+import JavaTab from './components/JavaTab.vue'
 
 type Tool = 'python' | 'node' | 'pg' | 'java'
 
