@@ -99,9 +99,27 @@ async function extractTarZst(archivePath: string, destDir: string): Promise<void
 export async function removeQuarantineAttr(targetDir: string): Promise<void> {
   if (process.platform === 'darwin') {
     try {
-      await run('xattr', ['-dr', 'com.apple.quarantine', targetDir])
+      // 先赋予当前用户写权限（某些文件可能是只读的，导致 xattr 无法修改）
+      await new Promise<void>((resolve) => {
+        const chmodProcess = spawn('chmod', ['-R', 'u+w', targetDir], {
+          stdio: 'ignore',
+          shell: false
+        })
+        chmodProcess.on('error', () => resolve()) // 即使 chmod 失败也继续
+        chmodProcess.on('exit', () => resolve())
+      })
+
+      // 清除隔离属性
+      await new Promise<void>((resolve) => {
+        const xattrProcess = spawn('xattr', ['-dr', 'com.apple.quarantine', targetDir], {
+          stdio: 'ignore',
+          shell: false
+        })
+        xattrProcess.on('error', () => resolve()) // xattr 不存在时也忽略
+        xattrProcess.on('exit', () => resolve()) // 无论退出码如何都成功
+      })
     } catch {
-      // ignore
+      // 完全忽略所有错误
     }
   }
 }

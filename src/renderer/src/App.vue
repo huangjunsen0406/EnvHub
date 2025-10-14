@@ -31,7 +31,6 @@ onMounted(() => {
   logsStore.initLogListener()
   logsStore.addLog('EnvHub 日志系统已启动', 'info')
 })
-
 </script>
 
 <template>

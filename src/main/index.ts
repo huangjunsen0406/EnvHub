@@ -3,6 +3,7 @@ import { homedir } from 'os'
 import { detectPlatform } from './envhub/platform'
 import { toolchainRoot } from './envhub/paths'
 import { installNode } from './envhub/installers/node'
+import { installJava } from './envhub/installers/java'
 import {
   installPostgres,
   initDb,
@@ -25,7 +26,8 @@ import { isPgRunning, pgStop, getPgStatus } from './envhub/pg-manager'
 import {
   fetchPythonVersions,
   fetchNodeVersions,
-  fetchPostgresVersions
+  fetchPostgresVersions,
+  fetchJavaVersions
 } from './envhub/online/version-fetcher'
 import {
   downloadFile,
@@ -122,13 +124,14 @@ app.whenReady().then(() => {
       current: getCurrent().current || {},
       python: listInstalled('python', dp),
       node: listInstalled('node', dp),
-      pg: listInstalled('pg', dp)
+      pg: listInstalled('pg', dp),
+      java: listInstalled('java', dp)
     }
   })
 
   ipcMain.handle(
     'envhub:use',
-    async (_evt, args: { tool: 'python' | 'node' | 'pg'; version: string }) => {
+    async (_evt, args: { tool: 'python' | 'node' | 'pg' | 'java'; version: string }) => {
       const dp = detectPlatform()
       logInfo(`Use ${args.tool}@${args.version || '(unset)'}`)
 
@@ -201,7 +204,7 @@ app.whenReady().then(() => {
 
   ipcMain.handle(
     'envhub:uninstall',
-    (_evt, args: { tool: 'python' | 'node' | 'pg'; version: string }) => {
+    (_evt, args: { tool: 'python' | 'node' | 'pg' | 'java'; version: string }) => {
       const dp = detectPlatform()
       logInfo(`Uninstall ${args.tool}@${args.version}`)
       uninstallTool(args.tool, args.version, dp)
@@ -342,7 +345,14 @@ app.whenReady().then(() => {
   // 在线安装：获取版本列表
   ipcMain.handle(
     'envhub:online:fetchVersions',
-    async (_evt, args: { tool: 'python' | 'node' | 'pg'; forceRefresh?: boolean }) => {
+    async (
+      _evt,
+      args: {
+        tool: 'python' | 'node' | 'pg' | 'java'
+        forceRefresh?: boolean
+        distribution?: string
+      }
+    ) => {
       const dp = detectPlatform()
       const forceRefresh = args.forceRefresh || false
       logInfo(`Fetching online versions for ${args.tool}${forceRefresh ? ' (force refresh)' : ''}`)
@@ -355,6 +365,12 @@ app.whenReady().then(() => {
           versions = await fetchNodeVersions(dp, forceRefresh)
         } else if (args.tool === 'pg') {
           versions = await fetchPostgresVersions(dp, forceRefresh)
+        } else if (args.tool === 'java') {
+          versions = await fetchJavaVersions(
+            dp,
+            (args.distribution as any) || 'temurin',
+            forceRefresh
+          )
         }
 
         logInfo(`Found ${versions?.length || 0} ${args.tool} versions`)
@@ -369,7 +385,10 @@ app.whenReady().then(() => {
   // 在线安装：下载并安装
   ipcMain.handle(
     'envhub:online:install',
-    async (evt, args: { tool: 'python' | 'node' | 'pg'; version: string; url: string }) => {
+    async (
+      evt,
+      args: { tool: 'python' | 'node' | 'pg' | 'java'; version: string; url: string }
+    ) => {
       const dp = detectPlatform()
       const { tool, version, url } = args
 
@@ -428,9 +447,15 @@ app.whenReady().then(() => {
             bundleDir: cacheDir(),
             artifact: { file: fileName, sha256: '' }
           })
+        } else if (tool === 'java') {
+          await installJava({
+            version,
+            platform: dp,
+            archivePath: savePath
+          })
         }
 
-        // Python 安装后不自动激活，Node/PostgreSQL 自动激活
+        // Python 安装后不自动激活，Node/PostgreSQL/Java 自动激活
         if (tool !== 'python') {
           logInfo(`Setting ${tool} ${version} as current version`)
           setCurrent(tool, version)
@@ -474,7 +499,9 @@ app.whenReady().then(() => {
     const pgBase = toolchainRoot('pg', args.pgVersion, dp)
     const binDir = join(pgBase, 'pgsql', 'bin')
     const home = process.env.HOME || homedir()
-    const dataDir = args.dataDir?.startsWith('~/') ? join(home, args.dataDir.slice(2)) : args.dataDir
+    const dataDir = args.dataDir?.startsWith('~/')
+      ? join(home, args.dataDir.slice(2))
+      : args.dataDir
     return await getPgStatus(binDir, dataDir)
   })
 

@@ -15,7 +15,7 @@ export function shimsDir(): string {
 }
 
 export function toolchainRoot(
-  tool: 'python' | 'node' | 'pg',
+  tool: 'python' | 'node' | 'pg' | 'java',
   version: string,
   dp: DetectedPlatform
 ): string {

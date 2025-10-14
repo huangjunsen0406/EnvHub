@@ -1,6 +1,5 @@
 <script setup lang="ts">
 // 设置页面目前只包含关于信息
-
 </script>
 
 <template>

@@ -20,6 +20,7 @@ interface VersionCache {
   python?: CacheEntry
   node?: CacheEntry
   pg?: CacheEntry
+  java?: CacheEntry
 }
 
 // 缓存有效期：24 小时（毫秒）
@@ -64,7 +65,7 @@ function writeCache(cache: VersionCache): void {
 /**
  * 获取指定工具的缓存（如果有效）
  */
-function getCachedVersions(tool: 'python' | 'node' | 'pg'): OnlineVersion[] | null {
+function getCachedVersions(tool: 'python' | 'node' | 'pg' | 'java'): OnlineVersion[] | null {
   const cache = readCache()
   const entry = cache[tool]
 
@@ -85,7 +86,10 @@ function getCachedVersions(tool: 'python' | 'node' | 'pg'): OnlineVersion[] | nu
 /**
  * 保存版本列表到缓存
  */
-function setCachedVersions(tool: 'python' | 'node' | 'pg', versions: OnlineVersion[]): void {
+function setCachedVersions(
+  tool: 'python' | 'node' | 'pg' | 'java',
+  versions: OnlineVersion[]
+): void {
   const cache = readCache()
   cache[tool] = {
     timestamp: Date.now(),
@@ -430,10 +434,158 @@ function buildPostgresInstallerUrl(version: string, platform: DetectedPlatform):
   return `https://get.enterprisedb.com/postgresql/postgresql-${version}-1-${platformStr}-binaries.zip`
 }
 
+/**
+ * Java 发行版类型
+ */
+export type JavaDistribution =
+  | 'temurin'
+  | 'oracle'
+  | 'corretto'
+  | 'graalvm'
+  | 'zulu'
+  | 'liberica'
+  | 'microsoft'
+
+export interface JavaVersion extends OnlineVersion {
+  distribution: JavaDistribution
+  lts?: boolean
+}
+
+/**
+ * 获取 Java 在线版本列表
+ * 默认使用 Temurin（Eclipse Adoptium）发行版
+ */
+export async function fetchJavaVersions(
+  platform: DetectedPlatform,
+  distribution: JavaDistribution = 'temurin',
+  forceRefresh = false
+): Promise<JavaVersion[]> {
+  // 检查缓存（除非强制刷新）
+  if (!forceRefresh) {
+    const cached = getCachedVersions('java')
+    if (cached) return cached as JavaVersion[]
+  }
+
+  try {
+    // Foojay API 端点
+    const { osType, archType } = getFoojayPlatform(platform)
+    const archiveType = platform.platformKey === 'win-x64' ? 'zip' : 'tar.gz'
+    const libcType = '' // macOS/Windows 不需要
+
+    const apiUrl =
+      `https://api.foojay.io/disco/v3.0/packages/jdks?` +
+      `distribution=${distribution}` +
+      `&architecture=${archType}` +
+      `&archive_type=${archiveType}` +
+      `&operating_system=${osType}` +
+      `&lib_c_type=${libcType}` +
+      `&release_status=ga` +
+      `&directly_downloadable=true` +
+      `&latest=available`
+
+    console.log('Fetching Java versions from:', apiUrl)
+
+    const response = await fetchJSON(apiUrl)
+
+    if (!response || !Array.isArray(response.result)) {
+      console.warn('No Java versions found or invalid response')
+      return []
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const versionMap = new Map<string, any>()
+
+    // 去重，只保留每个版本号的第一个（最新构建）
+    for (const pkg of response.result) {
+      const version = pkg.java_version
+      if (!version || versionMap.has(version)) continue
+
+      versionMap.set(version, pkg)
+    }
+
+    // 转换为 JavaVersion 数组
+    const versions: JavaVersion[] = []
+    for (const [version, pkg] of versionMap) {
+      // 获取详细下载信息
+      try {
+        const infoUrl = pkg.links?.pkg_info_uri
+        if (!infoUrl) continue
+
+        const info = await fetchJSON(infoUrl)
+        const downloadUrl = info.result?.[0]?.direct_download_uri
+
+        if (downloadUrl) {
+          versions.push({
+            version,
+            url: downloadUrl,
+            distribution,
+            lts: pkg.term_of_support === 'lts',
+            date: pkg.release_date || new Date().toISOString()
+          })
+        }
+      } catch (err) {
+        console.warn(`Failed to fetch download URL for Java ${version}:`, err)
+      }
+    }
+
+    // 按版本号降序排序
+    versions.sort((a, b) => {
+      const [aMajor = 0, aMinor = 0, aPatch = 0] = a.version.split('.').map(Number)
+      const [bMajor = 0, bMinor = 0, bPatch = 0] = b.version.split('.').map(Number)
+
+      if (aMajor !== bMajor) return bMajor - aMajor
+      if (aMinor !== bMinor) return bMinor - aMinor
+      return bPatch - aPatch
+    })
+
+    // 只取前 50 个版本（避免太多）
+    const limitedVersions = versions.slice(0, 50)
+
+    // 保存到缓存
+    setCachedVersions('java', limitedVersions)
+
+    return limitedVersions
+  } catch (error) {
+    console.error('Failed to fetch Java versions:', error)
+    return []
+  }
+}
+
+/**
+ * 将 EnvHub 平台映射到 Foojay API 参数
+ */
+function getFoojayPlatform(platform: DetectedPlatform): {
+  osType: string
+  archType: string
+} {
+  let osType: string
+  let archType: string
+
+  // 操作系统映射
+  if (platform.platformKey.startsWith('darwin')) {
+    osType = 'macos'
+  } else if (platform.platformKey.startsWith('win')) {
+    osType = 'windows'
+  } else {
+    osType = 'linux'
+  }
+
+  // 架构映射
+  if (platform.platformKey.includes('arm64')) {
+    archType = 'aarch64'
+  } else if (platform.platformKey.includes('x64')) {
+    archType = 'x64'
+  } else {
+    archType = 'x86'
+  }
+
+  return { osType, archType }
+}
 
 /**
  * 通用的 JSON 获取
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function fetchJSON(url: string): Promise<any> {
   return new Promise((resolve, reject) => {
     const request = httpsGet(

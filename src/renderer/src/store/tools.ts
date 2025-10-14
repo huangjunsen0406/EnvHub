@@ -5,12 +5,15 @@ export interface OnlineVersion {
   version: string
   url: string
   date?: string
+  lts?: boolean
+  distribution?: string
 }
 
 export interface InstalledInfo {
   python: any[]
   node: any[]
   pg: any[]
+  java: any[]
   current: Record<string, string>
 }
 
@@ -20,10 +23,12 @@ export const useToolsStore = defineStore('tools', () => {
     python: OnlineVersion[]
     node: OnlineVersion[]
     pg: OnlineVersion[]
+    java: OnlineVersion[]
   }>({
     python: [],
     node: [],
-    pg: []
+    pg: [],
+    java: []
   })
 
   // 已安装工具信息
@@ -31,6 +36,7 @@ export const useToolsStore = defineStore('tools', () => {
     python: [],
     node: [],
     pg: [],
+    java: [],
     current: {}
   })
 
@@ -47,22 +53,26 @@ export const useToolsStore = defineStore('tools', () => {
   const versionsLoaded = ref({
     python: false,
     node: false,
-    pg: false
+    pg: false,
+    java: false
   })
 
   // 获取在线版本列表
-  async function fetchOnlineVersions(tool?: 'python' | 'node' | 'pg', forceRefresh = false) {
-    const tools = tool ? [tool] : (['python', 'node', 'pg'] as const)
+  async function fetchOnlineVersions(
+    tool?: 'python' | 'node' | 'pg' | 'java',
+    forceRefresh = false
+  ) {
+    const tools = tool ? [tool] : (['python', 'node', 'pg', 'java'] as const)
 
     // 并行请求所有需要加载的工具
     const promises = tools
       .filter((t) => tool || forceRefresh || !versionsLoaded.value[t]) // 如果已加载过且不是强制刷新，跳过
       .map(async (t) => {
         try {
-          const versions = await window.electron.ipcRenderer.invoke(
-            'envhub:online:fetchVersions',
-            { tool: t, forceRefresh }
-          )
+          const versions = await window.electron.ipcRenderer.invoke('envhub:online:fetchVersions', {
+            tool: t,
+            forceRefresh
+          })
           onlineVersions.value[t] = versions || []
           versionsLoaded.value[t] = true
         } catch (error) {
@@ -88,6 +98,7 @@ export const useToolsStore = defineStore('tools', () => {
         python: [],
         node: [],
         pg: [],
+        java: [],
         current: {}
       }
     }

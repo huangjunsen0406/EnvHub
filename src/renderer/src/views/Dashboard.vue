@@ -134,7 +134,10 @@ onMounted(async () => {
               <div class="step-number">2</div>
               <div class="step-content">
                 <h4>下载并安装</h4>
-                <p>点击"安装"按钮下载工具（Python 需要手动运行安装器，Node.js 和 PostgreSQL 自动安装）</p>
+                <p>
+                  点击"安装"按钮下载工具（Python 需要手动运行安装器，Node.js 和 PostgreSQL
+                  自动安装）
+                </p>
               </div>
             </div>
             <div class="step-item">

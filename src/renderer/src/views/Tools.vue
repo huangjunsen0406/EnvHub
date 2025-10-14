@@ -1,14 +1,10 @@
 <script setup lang="ts">
 import { ref, reactive, onMounted, onUnmounted, computed, watch } from 'vue'
 import { Message } from '@arco-design/web-vue'
-import {
-  IconDelete,
-  IconCloudDownload,
-  IconRefresh
-} from '@arco-design/web-vue/es/icon'
+import { IconDelete, IconCloudDownload, IconRefresh } from '@arco-design/web-vue/es/icon'
 import { useToolsStore } from '../store/tools'
 
-type Tool = 'python' | 'node' | 'pg'
+type Tool = 'python' | 'node' | 'pg' | 'java'
 
 const activeTab = ref<Tool>('python')
 const toolsStore = useToolsStore()
@@ -73,7 +69,11 @@ const columns = [
   { title: '操作', slotName: 'actions' }
 ]
 
-async function fetchOnlineVersions(tool?: Tool, forceRefresh = false, silent = false): Promise<void> {
+async function fetchOnlineVersions(
+  tool?: Tool,
+  forceRefresh = false,
+  silent = false
+): Promise<void> {
   try {
     state.fetchingVersions = true
     await toolsStore.fetchOnlineVersions(tool, forceRefresh)
@@ -313,7 +313,9 @@ onUnmounted(() => {
                   安装
                 </a-button>
                 <a-button
-                  v-if="isInstalled('python', record.version) && !isCurrent('python', record.version)"
+                  v-if="
+                    isInstalled('python', record.version) && !isCurrent('python', record.version)
+                  "
                   type="outline"
                   size="small"
                   @click="useVer('python', record.version)"
@@ -321,7 +323,9 @@ onUnmounted(() => {
                   启用
                 </a-button>
                 <a-button
-                  v-if="isInstalled('python', record.version) && isCurrent('python', record.version)"
+                  v-if="
+                    isInstalled('python', record.version) && isCurrent('python', record.version)
+                  "
                   type="outline"
                   size="small"
                   @click="unsetCurrent('python')"
@@ -333,7 +337,9 @@ onUnmounted(() => {
                   @ok="uninstall('python', record.version)"
                 >
                   <a-button
-                    v-if="isInstalled('python', record.version) && !isCurrent('python', record.version)"
+                    v-if="
+                      isInstalled('python', record.version) && !isCurrent('python', record.version)
+                    "
                     type="outline"
                     status="danger"
                     size="small"
@@ -506,10 +512,7 @@ onUnmounted(() => {
                 >
                   停用
                 </a-button>
-                <a-popconfirm
-                  content="确定要卸载此版本吗？"
-                  @ok="uninstall('pg', record.version)"
-                >
+                <a-popconfirm content="确定要卸载此版本吗？" @ok="uninstall('pg', record.version)">
                   <a-button
                     v-if="isInstalled('pg', record.version) && !isCurrent('pg', record.version)"
                     type="outline"
@@ -530,6 +533,93 @@ onUnmounted(() => {
                 >
                   刷新状态
                 </a-button>
+              </a-space>
+            </template>
+          </a-table>
+        </a-tab-pane>
+
+        <!-- Java Tab -->
+        <a-tab-pane key="java" title="Java">
+          <template #icon>
+            <span style="font-size: 18px">☕</span>
+          </template>
+
+          <div style="margin-bottom: 16px">
+            <a-button
+              type="outline"
+              size="small"
+              :loading="state.fetchingVersions"
+              @click="refreshVersions('java')"
+            >
+              <template #icon>
+                <icon-refresh />
+              </template>
+              刷新版本列表
+            </a-button>
+          </div>
+
+          <a-table
+            :columns="columns"
+            :data="versionsOf('java')"
+            :pagination="{ pageSize: 20, showTotal: true }"
+          >
+            <template #status="{ record }">
+              <a-space>
+                <a-tag v-if="isInstalled('java', record.version)" color="green">已安装</a-tag>
+                <a-tag v-else color="gray">未安装</a-tag>
+                <a-tag v-if="isCurrent('java', record.version)" color="blue">当前版本</a-tag>
+                <a-tag v-if="record.lts" color="orange">LTS</a-tag>
+                <a-tag v-if="record.date" color="arcoblue">
+                  {{ new Date(record.date).toLocaleDateString() }}
+                </a-tag>
+              </a-space>
+            </template>
+            <template #actions="{ record }">
+              <a-space>
+                <a-button
+                  v-if="!isInstalled('java', record.version)"
+                  type="primary"
+                  size="small"
+                  :loading="state.installingVersions[`java-${record.version}`]"
+                  @click="installOnline('java', record.version, record.url)"
+                >
+                  <template #icon>
+                    <icon-cloud-download />
+                  </template>
+                  安装
+                </a-button>
+                <a-button
+                  v-if="isInstalled('java', record.version) && !isCurrent('java', record.version)"
+                  type="outline"
+                  size="small"
+                  @click="useVer('java', record.version)"
+                >
+                  启用
+                </a-button>
+                <a-button
+                  v-if="isInstalled('java', record.version) && isCurrent('java', record.version)"
+                  type="outline"
+                  size="small"
+                  @click="unsetCurrent('java')"
+                >
+                  停用
+                </a-button>
+                <a-popconfirm
+                  content="确定要卸载此版本吗？"
+                  @ok="uninstall('java', record.version)"
+                >
+                  <a-button
+                    v-if="isInstalled('java', record.version) && !isCurrent('java', record.version)"
+                    type="outline"
+                    status="danger"
+                    size="small"
+                  >
+                    <template #icon>
+                      <icon-delete />
+                    </template>
+                    卸载
+                  </a-button>
+                </a-popconfirm>
               </a-space>
             </template>
           </a-table>
