@@ -175,7 +175,13 @@ jobs:
           fi
 
           FILE="redis-${{ matrix.version }}-${{ matrix.target.platform }}.${EXT}"
-          sha256sum "$FILE" | tee "redis-${{ matrix.version }}-${{ matrix.target.platform }}.sha256"
+
+          # macOS 使用 shasum，Linux/Windows 使用 sha256sum
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "$FILE" | tee "redis-${{ matrix.version }}-${{ matrix.target.platform }}.sha256"
+          else
+            shasum -a 256 "$FILE" | tee "redis-${{ matrix.version }}-${{ matrix.target.platform }}.sha256"
+          fi
         shell: bash
 
       # 上传到 GitHub Release
