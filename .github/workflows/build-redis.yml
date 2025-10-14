@@ -32,8 +32,8 @@ jobs:
               sed 's/,$//')
           fi
 
-          # 转换为 JSON 数组
-          VERSIONS_JSON=$(echo "$VERSIONS" | jq -R 'split(",") | map(select(length > 0))')
+          # 转换为 JSON 数组 (单行格式)
+          VERSIONS_JSON=$(echo "$VERSIONS" | jq -Rc 'split(",") | map(select(length > 0))')
           echo "versions=$VERSIONS_JSON" >> $GITHUB_OUTPUT
           echo "Will build Redis versions: $VERSIONS_JSON"
 
@@ -43,28 +43,24 @@ jobs:
       fail-fast: false
       matrix:
         version: ${{ fromJson(needs.parse-versions.outputs.versions) }}
-        include:
-          # Windows x64
+        target:
           - os: windows-latest
             platform: win-x64
             archive_ext: zip
 
-          # macOS Apple Silicon
           - os: macos-14
             platform: darwin-arm64
             archive_ext: tar.gz
 
-          # macOS Intel
           - os: macos-13
             platform: darwin-x64
             archive_ext: tar.gz
 
-          # Linux x64
           - os: ubuntu-20.04
             platform: linux-x64
             archive_ext: tar.gz
 
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.target.os }}
 
     steps:
       - uses: actions/checkout@v4
@@ -75,9 +71,9 @@ jobs:
         run: |
           if gh release view redis-${{ matrix.version }} --repo ${{ github.repository }} >/dev/null 2>&1; then
             ASSETS=$(gh release view redis-${{ matrix.version }} --repo ${{ github.repository }} --json assets -q '.assets[].name')
-            if echo "$ASSETS" | grep -q "${{ matrix.platform }}"; then
+            if echo "$ASSETS" | grep -q "${{ matrix.target.platform }}"; then
               echo "exists=true" >> $GITHUB_OUTPUT
-              echo "Asset for ${{ matrix.platform }} already exists"
+              echo "Asset for ${{ matrix.target.platform }} already exists"
             else
               echo "exists=false" >> $GITHUB_OUTPUT
             fi
@@ -125,7 +121,7 @@ jobs:
 
           # 打包
           cd install
-          tar czf ../../redis-${{ matrix.version }}-${{ matrix.platform }}.tar.gz .
+          tar czf ../../redis-${{ matrix.version }}-${{ matrix.target.platform }}.tar.gz .
         shell: bash
 
       # Windows 构建
@@ -166,9 +162,8 @@ jobs:
 
           # 打包
           cd install
-          7z a ../../redis-${{ matrix.version }}-${{ matrix.platform }}.zip .
+          7z a ../../redis-${{ matrix.version }}-${{ matrix.target.platform }}.zip .
 
-      # 生成校验和
       - name: Generate checksums
         if: steps.check.outputs.exists != 'true'
         run: |
@@ -178,8 +173,8 @@ jobs:
             EXT="tar.gz"
           fi
 
-          FILE="redis-${{ matrix.version }}-${{ matrix.platform }}.${EXT}"
-          sha256sum "$FILE" | tee "redis-${{ matrix.version }}-${{ matrix.platform }}.sha256"
+          FILE="redis-${{ matrix.version }}-${{ matrix.target.platform }}.${EXT}"
+          sha256sum "$FILE" | tee "redis-${{ matrix.version }}-${{ matrix.target.platform }}.sha256"
         shell: bash
 
       # 上传到 GitHub Release
@@ -210,7 +205,7 @@ jobs:
             ## 自动构建
             由 GitHub Actions 自动构建和发布
           files: |
-            redis-${{ matrix.version }}-${{ matrix.platform }}.*
+            redis-${{ matrix.version }}-${{ matrix.target.platform }}.*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
