@@ -141,8 +141,8 @@ jobs:
         run: |
           cd redis-src
 
-          # Windows 编译
-          make -j$(nproc)
+          # Windows 编译（禁用 TLS）
+          make -j$(nproc) CFLAGS="-Wno-char-subscripts -O2"
 
           # 创建安装目录结构
           mkdir -p install/bin install/etc
@@ -154,12 +154,8 @@ jobs:
           cp src/redis-check-aof.exe install/bin/
           cp src/redis-check-rdb.exe install/bin/
 
-          # 复制配置文件 (Windows 特定配置)
-          if [ -f redis.windows-service.conf ]; then
-            cp redis.windows-service.conf install/etc/redis.conf
-          else
-            cp redis.conf install/etc/
-          fi
+          # 复制配置文件
+          cp redis.conf install/etc/
 
           # 打包
           cd install
