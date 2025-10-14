@@ -109,18 +109,19 @@ jobs:
           fi
 
           # 安装到临时目录
-          make PREFIX=$PWD/install install
+          INSTALL_DIR="$PWD/redis-install"
+          make PREFIX="$INSTALL_DIR" install
 
           # 复制配置文件
-          mkdir -p install/etc
-          cp redis.conf install/etc/
-          cp sentinel.conf install/etc/ 2>/dev/null || true
+          mkdir -p "$INSTALL_DIR/etc"
+          cp redis.conf "$INSTALL_DIR/etc/"
+          cp sentinel.conf "$INSTALL_DIR/etc/" 2>/dev/null || true
 
           # 创建日志和数据目录占位符
-          mkdir -p install/var/log install/var/lib
+          mkdir -p "$INSTALL_DIR/var/log" "$INSTALL_DIR/var/lib"
 
           # 打包
-          cd install
+          cd "$INSTALL_DIR"
           tar czf ../../redis-${{ matrix.version }}-${{ matrix.target.platform }}.tar.gz .
         shell: bash
 
