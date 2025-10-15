@@ -660,8 +660,7 @@ export async function fetchRedisVersions(
       // macOS/Linux: 使用 Redis Stack
       const stackVersions = [
         { version: '7.4.0', build: 'v7', date: '2024-10-03' },
-        { version: '7.2.0', build: 'v19', date: '2024-10-03' },
-        { version: '7.2.0', build: 'v18', date: '2024-07-07' }
+        { version: '7.2.0', build: 'v19', date: '2024-10-03' }
       ]
 
       for (const { version, build, date } of stackVersions) {

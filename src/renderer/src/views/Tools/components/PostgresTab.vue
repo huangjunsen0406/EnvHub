@@ -1,6 +1,14 @@
 <script setup lang="ts">
-import { ref, reactive } from 'vue'
-import { IconDelete, IconCloudDownload, IconRefresh } from '@arco-design/web-vue/es/icon'
+import { ref, reactive, computed, onMounted } from 'vue'
+import {
+  IconDelete,
+  IconCloudDownload,
+  IconRefresh,
+  IconPlus,
+  IconEye,
+  IconEyeInvisible
+} from '@arco-design/web-vue/es/icon'
+import { Message } from '@arco-design/web-vue'
 import { useToolVersion } from '../composables/useToolVersion'
 import InstallProgressModal from './InstallProgressModal.vue'
 
@@ -19,18 +27,47 @@ const {
   closeInstallProgress
 } = useToolVersion('pg')
 
-const columns = [
-  { title: '版本', dataIndex: 'version', width: 150 },
-  { title: '状态', slotName: 'status', width: 200 },
-  { title: '操作', slotName: 'actions' }
-]
-
 const pgStatus = ref<
   Record<string, { running: boolean; pid?: number; port?: number; dataDir?: string }>
 >({})
 
 const state = reactive({
-  cluster: 'main'
+  cluster: 'main',
+  activeTab: 'versions' as 'versions' | 'databases'
+})
+
+// 数据库管理相关
+interface DatabaseWithMetadata {
+  dbName: string
+  username: string
+  password: string
+  note: string
+  location: string
+}
+
+const databases = ref<DatabaseWithMetadata[]>([])
+const showAddDbModal = ref(false)
+const addDbForm = reactive({
+  dbName: '',
+  username: '',
+  password: ''
+})
+const loadingDatabases = ref(false)
+
+// 密码显示控制
+const passwordVisible = ref<Record<string, boolean>>({})
+
+// 改密相关
+const showChangePwdModal = ref(false)
+const changePwdForm = reactive({
+  dbName: '',
+  username: '',
+  password: ''
+})
+
+const currentPgVersion = computed(() => {
+  const current = onlineVersions.value.find((v) => isCurrent(v.version))
+  return current?.version || ''
 })
 
 async function checkPgStatus(v: string): Promise<void> {
@@ -62,92 +99,389 @@ async function unsetPgCurrent(): Promise<void> {
     await checkPgStatus(v)
   }
 }
+
+// 加载数据库列表（带元数据）
+async function loadDatabases(): Promise<void> {
+  if (!currentPgVersion.value) {
+    Message.warning('请先启用一个 PostgreSQL 版本')
+    return
+  }
+
+  try {
+    loadingDatabases.value = true
+    const result = await window.electron.ipcRenderer.invoke('envhub:pg:getDatabasesWithMetadata', {
+      pgVersion: currentPgVersion.value
+    })
+    databases.value = result.databases || []
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : '未知错误'
+    Message.error(`加载数据库列表失败: ${message}`)
+  } finally {
+    loadingDatabases.value = false
+  }
+}
+
+// 切换密码显示/隐藏
+function togglePasswordVisible(dbName: string): void {
+  passwordVisible.value[dbName] = !passwordVisible.value[dbName]
+}
+
+// 生成随机密码
+function generatePassword(): void {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+  let password = ''
+  for (let i = 0; i < 16; i++) {
+    password += chars.charAt(Math.floor(Math.random() * chars.length))
+  }
+  addDbForm.password = password
+}
+
+// 生成改密用的随机密码
+function generatePasswordForChange(): void {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789'
+  let password = ''
+  for (let i = 0; i < 16; i++) {
+    password += chars.charAt(Math.floor(Math.random() * chars.length))
+  }
+  changePwdForm.password = password
+}
+
+// 打开改密弹窗
+function openChangePwdModal(dbName: string, username: string): void {
+  changePwdForm.dbName = dbName
+  changePwdForm.username = username
+  changePwdForm.password = ''
+  showChangePwdModal.value = true
+}
+
+// 执行改密
+async function handleChangePassword(): Promise<void> {
+  if (!changePwdForm.password) {
+    Message.warning('请输入新密码')
+    return
+  }
+
+  if (!currentPgVersion.value) {
+    Message.error('请先启用一个 PostgreSQL 版本')
+    return
+  }
+
+  try {
+    await window.electron.ipcRenderer.invoke('envhub:pg:changePassword', {
+      pgVersion: currentPgVersion.value,
+      username: changePwdForm.username,
+      newPassword: changePwdForm.password
+    })
+
+    Message.success('密码修改成功')
+    showChangePwdModal.value = false
+    await loadDatabases()
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : '未知错误'
+    Message.error(`修改密码失败: ${message}`)
+  }
+}
+
+// 删除数据库
+async function handleDeleteDatabase(dbName: string): Promise<void> {
+  if (!currentPgVersion.value) {
+    Message.error('请先启用一个 PostgreSQL 版本')
+    return
+  }
+
+  try {
+    await window.electron.ipcRenderer.invoke('envhub:pg:deleteDatabase', {
+      pgVersion: currentPgVersion.value,
+      dbName
+    })
+
+    Message.success('数据库删除成功')
+    await loadDatabases()
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : '未知错误'
+    Message.error(`删除数据库失败: ${message}`)
+  }
+}
+
+// 添加数据库
+async function handleAddDatabase(): Promise<void> {
+  if (!addDbForm.dbName || !addDbForm.username || !addDbForm.password) {
+    Message.warning('请填写完整的数据库信息')
+    return
+  }
+
+  if (!currentPgVersion.value) {
+    Message.error('请先启用一个 PostgreSQL 版本')
+    return
+  }
+
+  try {
+    await window.electron.ipcRenderer.invoke('envhub:pg:createUserDb', {
+      pgVersion: currentPgVersion.value,
+      dbName: addDbForm.dbName,
+      username: addDbForm.username,
+      password: addDbForm.password
+    })
+
+    Message.success('数据库创建成功')
+    showAddDbModal.value = false
+    addDbForm.dbName = ''
+    addDbForm.username = ''
+    addDbForm.password = ''
+    await loadDatabases()
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : '未知错误'
+    Message.error(`创建数据库失败: ${message}`)
+  }
+}
+
+// 切换到数据库管理时加载数据库列表
+function switchToDatabase(): void {
+  state.activeTab = 'databases'
+  loadDatabases()
+}
+
+onMounted(() => {
+  // 初始化时不执行任何操作
+})
 </script>
 
 <template>
   <div class="w-full">
-    <div class="mb-4">
-      <a-button type="outline" size="small" :loading="fetchingVersions" @click="refreshVersions()">
-        <template #icon>
-          <icon-refresh />
-        </template>
-        刷新版本列表
+    <!-- Tab 切换 -->
+    <div class="mb-4 flex gap-2">
+      <a-button
+        :type="state.activeTab === 'versions' ? 'primary' : 'outline'"
+        size="small"
+        @click="state.activeTab = 'versions'"
+      >
+        版本管理
+      </a-button>
+      <a-button
+        :type="state.activeTab === 'databases' ? 'primary' : 'outline'"
+        size="small"
+        @click="switchToDatabase()"
+      >
+        数据库管理
       </a-button>
     </div>
 
-    <a-table
-      :columns="columns"
-      :data="onlineVersions"
-      :pagination="{ pageSize: 20, showTotal: true }"
-    >
-      <template #status="{ record }">
-        <a-space>
-          <a-tag v-if="isInstalled(record.version)" color="green">已安装</a-tag>
-          <a-tag v-else color="gray">未安装</a-tag>
-          <a-tag v-if="isCurrent(record.version)" color="blue">当前版本</a-tag>
-          <a-tag v-if="pgStatus[record.version]?.running" color="arcoblue">
-            运行中 PID:{{ pgStatus[record.version].pid }} 端口:{{ pgStatus[record.version].port }}
-          </a-tag>
-          <a-tag v-else-if="isInstalled(record.version)" color="gray">已停止</a-tag>
-          <a-tag v-if="record.date" color="arcoblue">
-            {{ new Date(record.date).toLocaleDateString() }}
-          </a-tag>
-        </a-space>
-      </template>
-      <template #actions="{ record }">
-        <a-space>
-          <a-button
-            v-if="!isInstalled(record.version)"
-            type="primary"
-            size="small"
-            :loading="installingVersions[`pg-${record.version}`]"
-            @click="installOnline(record.version, record.url)"
-          >
-            <template #icon>
-              <icon-cloud-download />
-            </template>
-            安装
-          </a-button>
-          <a-button
-            v-if="isInstalled(record.version) && !isCurrent(record.version)"
-            type="outline"
-            size="small"
-            @click="usePgVersion(record.version)"
-          >
-            启用
-          </a-button>
-          <a-button
-            v-if="isInstalled(record.version) && isCurrent(record.version)"
-            type="outline"
-            size="small"
-            @click="unsetPgCurrent()"
-          >
-            停用
-          </a-button>
-          <a-popconfirm content="确定要卸载此版本吗？" @ok="uninstall(record.version)">
+    <!-- 版本管理 -->
+    <div v-if="state.activeTab === 'versions'" class="w-full">
+      <div class="mb-4">
+        <a-button
+          type="outline"
+          size="small"
+          :loading="fetchingVersions"
+          @click="refreshVersions()"
+        >
+          <template #icon>
+            <icon-refresh />
+          </template>
+          刷新版本列表
+        </a-button>
+      </div>
+
+      <a-table
+        :columns="[
+          { title: '版本', dataIndex: 'version', width: 150 },
+          { title: '状态', slotName: 'status', width: 200 },
+          { title: '操作', slotName: 'actions' }
+        ]"
+        :data="onlineVersions"
+        :pagination="{ pageSize: 20, showTotal: true }"
+      >
+        <template #status="{ record }">
+          <a-space>
+            <a-tag v-if="isInstalled(record.version)" color="green">已安装</a-tag>
+            <a-tag v-else color="gray">未安装</a-tag>
+            <a-tag v-if="isCurrent(record.version)" color="blue">当前版本</a-tag>
+            <a-tag v-if="pgStatus[record.version]?.running" color="arcoblue">
+              运行中 PID:{{ pgStatus[record.version].pid }} 端口:{{ pgStatus[record.version].port }}
+            </a-tag>
+            <a-tag v-else-if="isInstalled(record.version)" color="gray">已停止</a-tag>
+            <a-tag v-if="record.date" color="arcoblue">
+              {{ new Date(record.date).toLocaleDateString() }}
+            </a-tag>
+          </a-space>
+        </template>
+        <template #actions="{ record }">
+          <a-space>
+            <a-button
+              v-if="!isInstalled(record.version)"
+              type="primary"
+              size="small"
+              :loading="installingVersions[`pg-${record.version}`]"
+              @click="installOnline(record.version, record.url)"
+            >
+              <template #icon>
+                <icon-cloud-download />
+              </template>
+              安装
+            </a-button>
             <a-button
               v-if="isInstalled(record.version) && !isCurrent(record.version)"
               type="outline"
-              status="danger"
               size="small"
+              @click="usePgVersion(record.version)"
+            >
+              启用
+            </a-button>
+            <a-button
+              v-if="isInstalled(record.version) && isCurrent(record.version)"
+              type="outline"
+              size="small"
+              @click="unsetPgCurrent()"
+            >
+              停用
+            </a-button>
+            <a-popconfirm content="确定要卸载此版本吗？" @ok="uninstall(record.version)">
+              <a-button
+                v-if="isInstalled(record.version) && !isCurrent(record.version)"
+                type="outline"
+                status="danger"
+                size="small"
+              >
+                <template #icon>
+                  <icon-delete />
+                </template>
+                卸载
+              </a-button>
+            </a-popconfirm>
+            <a-button
+              v-if="isInstalled(record.version)"
+              type="text"
+              size="small"
+              @click="checkPgStatus(record.version)"
+            >
+              刷新状态
+            </a-button>
+          </a-space>
+        </template>
+      </a-table>
+    </div>
+
+    <!-- 数据库管理 -->
+    <div v-if="state.activeTab === 'databases'" class="w-full">
+      <div class="mb-4 flex justify-between items-center">
+        <div class="text-sm text-gray-600">
+          当前版本: <span class="font-semibold">{{ currentPgVersion || '无' }}</span>
+        </div>
+        <a-button type="primary" size="small" @click="showAddDbModal = true">
+          <template #icon>
+            <icon-plus />
+          </template>
+          添加数据库
+        </a-button>
+      </div>
+
+      <a-table
+        :columns="[
+          { title: '数据库名称', dataIndex: 'dbName', width: 150 },
+          { title: '用户名', dataIndex: 'username', width: 120 },
+          { title: '密码', slotName: 'password', width: 180 },
+          { title: '备份', slotName: 'backup', width: 150 },
+          { title: '数据库位置', dataIndex: 'location', width: 120 },
+          { title: '备注', dataIndex: 'note', width: 100 },
+          { title: '操作', slotName: 'actions', width: 150 }
+        ]"
+        :data="databases"
+        :loading="loadingDatabases"
+        :pagination="{ pageSize: 20, showTotal: true }"
+      >
+        <template #password="{ record }">
+          <a-space>
+            <span v-if="passwordVisible[record.dbName]">{{ record.password || '未设置' }}</span>
+            <span v-else>{{ record.password ? '••••••••' : '未设置' }}</span>
+            <a-button
+              v-if="record.password"
+              type="text"
+              size="small"
+              @click="togglePasswordVisible(record.dbName)"
             >
               <template #icon>
-                <icon-delete />
+                <icon-eye v-if="!passwordVisible[record.dbName]" />
+                <icon-eye-invisible v-else />
               </template>
-              卸载
             </a-button>
-          </a-popconfirm>
-          <a-button
-            v-if="isInstalled(record.version)"
-            type="text"
-            size="small"
-            @click="checkPgStatus(record.version)"
-          >
-            刷新状态
-          </a-button>
-        </a-space>
-      </template>
-    </a-table>
+          </a-space>
+        </template>
+        <template #backup>
+          <a-space>
+            <a-button type="text" size="small">点击备份</a-button>
+            <a-button type="text" size="small">导入</a-button>
+          </a-space>
+        </template>
+        <template #actions="{ record }">
+          <a-space>
+            <a-button
+              type="text"
+              status="success"
+              size="small"
+              @click="openChangePwdModal(record.dbName, record.username)"
+            >
+              改密
+            </a-button>
+            <a-popconfirm
+              v-if="record.dbName !== 'postgres'"
+              content="确定要删除此数据库吗？"
+              @ok="handleDeleteDatabase(record.dbName)"
+            >
+              <a-button type="text" status="danger" size="small">删除</a-button>
+            </a-popconfirm>
+          </a-space>
+        </template>
+      </a-table>
+    </div>
+
+    <!-- 添加数据库弹窗 -->
+    <a-modal
+      v-model:visible="showAddDbModal"
+      title="添加数据库"
+      @ok="handleAddDatabase"
+      @cancel="showAddDbModal = false"
+    >
+      <a-form :model="addDbForm" layout="vertical">
+        <a-form-item label="数据库名称" required>
+          <a-input v-model="addDbForm.dbName" placeholder="请输入数据库名称" />
+        </a-form-item>
+        <a-form-item label="用户名" required>
+          <a-input v-model="addDbForm.username" placeholder="请输入用户名" />
+        </a-form-item>
+        <a-form-item label="密码" required>
+          <a-input-password v-model="addDbForm.password" placeholder="请输入密码">
+            <template #append>
+              <a-button type="text" size="small" @click="generatePassword()">生成</a-button>
+            </template>
+          </a-input-password>
+        </a-form-item>
+      </a-form>
+    </a-modal>
+
+    <!-- 改密弹窗 -->
+    <a-modal
+      v-model:visible="showChangePwdModal"
+      :title="`设置数据库 【${changePwdForm.dbName}】 密码`"
+      @ok="handleChangePassword"
+      @cancel="showChangePwdModal = false"
+    >
+      <a-form :model="changePwdForm" layout="vertical">
+        <a-form-item label="用户名">
+          <a-input v-model="changePwdForm.username" disabled />
+        </a-form-item>
+        <a-form-item label="密码" required>
+          <a-input-password v-model="changePwdForm.password" placeholder="请输入新密码">
+            <template #append>
+              <a-button type="text" size="small" @click="generatePasswordForChange()">
+                <template #icon>
+                  <icon-refresh />
+                </template>
+              </a-button>
+            </template>
+          </a-input-password>
+        </a-form-item>
+      </a-form>
+    </a-modal>
 
     <InstallProgressModal :progress="installProgress" @close="closeInstallProgress" />
   </div>

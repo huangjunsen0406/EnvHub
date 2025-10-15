@@ -14,7 +14,6 @@ const emit = defineEmits<{
 function handleClose(): void {
   emit('close')
 }
-
 </script>
 
 <template>
@@ -43,10 +42,7 @@ function handleClose(): void {
         </div>
       </div>
 
-      <div
-        v-if="progress.status === 'info'"
-        class="text-xs text-gray-500 mt-2 border-t pt-3"
-      >
+      <div v-if="progress.status === 'info'" class="text-xs text-gray-500 mt-2 border-t pt-3">
         提示：关闭弹窗不会中断下载，安装将在后台继续进行
       </div>
     </div>

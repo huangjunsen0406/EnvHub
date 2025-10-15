@@ -28,6 +28,12 @@ import { isPathConfigured, addToPath, removeFromPath } from './envhub/path-manag
 import { isPgRunning, pgStop, getPgStatus } from './envhub/pg-manager'
 import { isRedisRunning, getRedisStatus } from './envhub/redis-manager'
 import {
+  addDatabaseMetadata,
+  getAllDatabaseMetadata,
+  updateDatabasePassword,
+  deleteDatabaseMetadata
+} from './envhub/pg-metadata'
+import {
   fetchPythonVersions,
   fetchNodeVersions,
   fetchPostgresVersions,
@@ -311,12 +317,169 @@ app.whenReady().then(() => {
     ) => {
       const dp = detectPlatform()
       const pgBase = toolchainRoot('pg', args.pgVersion, dp)
-      const binDir = process.platform === 'win32' ? `${pgBase}/bin` : `${pgBase}/bin`
+      const binDir = join(pgBase, 'pgsql', 'bin')
       logInfo(`Creating PG user ${args.username} and db ${args.dbName}`)
       await createUser(binDir, 'postgres', args.username, args.password)
       await createDatabase(binDir, args.dbName, args.username)
       logInfo(`User and database created`)
+
+      // 保存元数据
+      const majorVersion = args.pgVersion.split('.')[0]
+      addDatabaseMetadata(majorVersion, 'main', {
+        dbName: args.dbName,
+        username: args.username,
+        password: args.password,
+        note: ''
+      })
+      logInfo(`Metadata saved for database ${args.dbName}`)
+
       return { ok: true }
+    }
+  )
+
+  ipcMain.handle('envhub:pg:listDatabases', async (_evt, args: { pgVersion: string }) => {
+    const dp = detectPlatform()
+    const pgBase = toolchainRoot('pg', args.pgVersion, dp)
+    const binDir = join(pgBase, 'pgsql', 'bin')
+    const psql = process.platform === 'win32' ? join(binDir, 'psql.exe') : join(binDir, 'psql')
+
+    try {
+      const { execSync } = await import('child_process')
+      const result = execSync(
+        `"${psql}" -d postgres -t -A -c "SELECT datname FROM pg_database WHERE datistemplate = false ORDER BY datname"`,
+        { encoding: 'utf8' }
+      )
+      const databases = result
+        .trim()
+        .split('\n')
+        .filter((name: string) => name && name !== 'postgres')
+      return { databases }
+    } catch (error: unknown) {
+      console.error('Failed to list databases:', error)
+      return { databases: [] }
+    }
+  })
+
+  // 获取数据库列表（带元数据）
+  ipcMain.handle(
+    'envhub:pg:getDatabasesWithMetadata',
+    async (_evt, args: { pgVersion: string }) => {
+      const dp = detectPlatform()
+      const pgBase = toolchainRoot('pg', args.pgVersion, dp)
+      const binDir = join(pgBase, 'pgsql', 'bin')
+      const psql = process.platform === 'win32' ? join(binDir, 'psql.exe') : join(binDir, 'psql')
+
+      try {
+        // 查询数据库名和所有者
+        const { execSync } = await import('child_process')
+        const result = execSync(
+          `"${psql}" -d postgres -t -A -c "SELECT d.datname, pg_catalog.pg_get_userbyid(d.datdba) FROM pg_catalog.pg_database d WHERE datistemplate = false ORDER BY datname"`,
+          { encoding: 'utf8' }
+        )
+
+        const dbList = result
+          .trim()
+          .split('\n')
+          .filter((line: string) => line)
+          .map((line: string) => {
+            const [dbName, owner] = line.split('|')
+            return { dbName, owner }
+          })
+
+        // 读取元数据
+        const majorVersion = args.pgVersion.split('.')[0]
+        const metadata = getAllDatabaseMetadata(majorVersion, 'main')
+
+        // 合并数据
+        const databases = dbList.map((db) => {
+          const meta = metadata.find((m) => m.dbName === db.dbName)
+          return {
+            dbName: db.dbName,
+            username: db.owner,
+            password: meta?.password || '',
+            note: meta?.note || (db.dbName === 'postgres' ? '管理员' : ''),
+            location: '本地数据库'
+          }
+        })
+
+        // postgres 数据库排第一位
+        databases.sort((a, b) => {
+          if (a.dbName === 'postgres') return -1
+          if (b.dbName === 'postgres') return 1
+          return a.dbName.localeCompare(b.dbName)
+        })
+
+        return { databases }
+      } catch (error: unknown) {
+        console.error('Failed to get databases with metadata:', error)
+        return { databases: [] }
+      }
+    }
+  )
+
+  // 修改数据库用户密码
+  ipcMain.handle(
+    'envhub:pg:changePassword',
+    async (_evt, args: { pgVersion: string; username: string; newPassword: string }) => {
+      const dp = detectPlatform()
+      const pgBase = toolchainRoot('pg', args.pgVersion, dp)
+      const binDir = join(pgBase, 'pgsql', 'bin')
+      const psql = process.platform === 'win32' ? join(binDir, 'psql.exe') : join(binDir, 'psql')
+
+      try {
+        const { execSync } = await import('child_process')
+        // 修改 PostgreSQL 用户密码
+        execSync(
+          `"${psql}" -d postgres -c "ALTER USER ${args.username} WITH PASSWORD '${args.newPassword}'"`,
+          { encoding: 'utf8' }
+        )
+
+        // 更新元数据
+        const majorVersion = args.pgVersion.split('.')[0]
+        updateDatabasePassword(majorVersion, 'main', args.username, args.newPassword)
+
+        logInfo(`Password changed for user ${args.username}`)
+        return { ok: true }
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : '未知错误'
+        logInfo(`Failed to change password: ${message}`)
+        throw error
+      }
+    }
+  )
+
+  // 删除数据库
+  ipcMain.handle(
+    'envhub:pg:deleteDatabase',
+    async (_evt, args: { pgVersion: string; dbName: string }) => {
+      const dp = detectPlatform()
+      const pgBase = toolchainRoot('pg', args.pgVersion, dp)
+      const binDir = join(pgBase, 'pgsql', 'bin')
+      const psql = process.platform === 'win32' ? join(binDir, 'psql.exe') : join(binDir, 'psql')
+
+      // 防止删除 postgres 数据库
+      if (args.dbName === 'postgres') {
+        throw new Error('不能删除 postgres 管理员数据库')
+      }
+
+      try {
+        const { execSync } = await import('child_process')
+        // 删除 PostgreSQL 数据库
+        execSync(`"${psql}" -d postgres -c "DROP DATABASE ${args.dbName}"`, {
+          encoding: 'utf8'
+        })
+
+        // 删除元数据
+        const majorVersion = args.pgVersion.split('.')[0]
+        deleteDatabaseMetadata(majorVersion, 'main', args.dbName)
+
+        logInfo(`Database ${args.dbName} deleted`)
+        return { ok: true }
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : '未知错误'
+        logInfo(`Failed to delete database: ${message}`)
+        throw error
+      }
     }
   )
 

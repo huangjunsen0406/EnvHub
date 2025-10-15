@@ -175,6 +175,8 @@ function runWithOutput(cmd: string, args: string[]): Promise<string> {
       stdout += data.toString()
     })
     p.on('error', reject)
-    p.on('exit', (code) => (code === 0 ? resolve(stdout) : reject(new Error(`${cmd} exited ${code}`))))
+    p.on('exit', (code) =>
+      code === 0 ? resolve(stdout) : reject(new Error(`${cmd} exited ${code}`))
+    )
   })
 }
