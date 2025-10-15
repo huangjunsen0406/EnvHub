@@ -6,9 +6,11 @@ import {
   IconRefresh,
   IconPlus,
   IconEye,
-  IconEyeInvisible
+  IconEyeInvisible,
+  IconExport,
+  IconImport
 } from '@arco-design/web-vue/es/icon'
-import { Message } from '@arco-design/web-vue'
+import { Message, Modal } from '@arco-design/web-vue'
 import { useToolVersion } from '../composables/useToolVersion'
 import InstallProgressModal from './InstallProgressModal.vue'
 
@@ -56,6 +58,12 @@ const loadingDatabases = ref(false)
 
 // 密码显示控制
 const passwordVisible = ref<Record<string, boolean>>({})
+
+// 备份/导入相关
+const backupLoading = ref<Record<string, boolean>>({})
+const restoreLoading = ref<Record<string, boolean>>({})
+const showBackupLogModal = ref(false)
+const backupLogContent = ref('')
 
 // 改密相关
 const showChangePwdModal = ref(false)
@@ -199,7 +207,17 @@ async function handleDeleteDatabase(dbName: string): Promise<void> {
     await loadDatabases()
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : '未知错误'
-    Message.error(`删除数据库失败: ${message}`)
+
+    // 检测是否是数据库被占用的错误
+    if (message.includes('is being accessed by other users') ||
+        message.includes('other session using the database')) {
+      Message.warning({
+        content: `无法删除数据库 ${dbName}：数据库正在被其他会话访问，请先关闭所有数据库客户端（如 Navicat、DBeaver、pgAdmin 等）的连接后重试`,
+        duration: 5000
+      })
+    } else {
+      Message.error(`删除数据库失败: ${message}`)
+    }
   }
 }
 
@@ -241,6 +259,129 @@ function switchToDatabase(): void {
   loadDatabases()
 }
 
+// 备份数据库
+async function handleBackup(dbName: string, username: string, password: string): Promise<void> {
+  if (!currentPgVersion.value) {
+    Message.error('请先启用一个 PostgreSQL 版本')
+    return
+  }
+
+  try {
+    // 选择保存路径
+    const selectResult = await window.electron.ipcRenderer.invoke('envhub:pg:selectBackupPath', {
+      dbName
+    })
+
+    if (selectResult.canceled) {
+      return
+    }
+
+    backupLoading.value[dbName] = true
+    backupLogContent.value = ''
+    showBackupLogModal.value = true
+
+    // 监听备份日志
+    const logListener = (_evt: unknown, message: string) => {
+      backupLogContent.value += message
+    }
+    window.electron.ipcRenderer.on('envhub:pg:backup:log', logListener)
+
+    try {
+      await window.electron.ipcRenderer.invoke('envhub:pg:backup', {
+        pgVersion: currentPgVersion.value,
+        dbName,
+        username,
+        password,
+        filePath: selectResult.filePath
+      })
+
+      backupLogContent.value += '\n✅ 备份成功\n'
+      Message.success('数据库备份成功')
+    } finally {
+      // @ts-ignore - removeListener is deprecated but required for compatibility
+      window.electron.ipcRenderer.removeListener('envhub:pg:backup:log', logListener)
+      backupLoading.value[dbName] = false
+    }
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : '未知错误'
+    backupLogContent.value += `\n❌ 备份失败: ${message}\n`
+    Message.error(`备份失败: ${message}`)
+    backupLoading.value[dbName] = false
+  }
+}
+
+// 导入/恢复数据库
+async function handleRestore(dbName: string, username: string, password: string): Promise<void> {
+  if (!currentPgVersion.value) {
+    Message.error('请先启用一个 PostgreSQL 版本')
+    return
+  }
+
+  try {
+    // 选择备份文件
+    const selectResult = await window.electron.ipcRenderer.invoke('envhub:pg:selectRestoreFile')
+
+    if (selectResult.canceled) {
+      return
+    }
+
+    // 确认导入
+    const confirmed = await new Promise<boolean>((resolve) => {
+      Modal.confirm({
+        title: '确认导入',
+        content: `即将导入备份到数据库 ${dbName}，现有数据可能被覆盖，是否继续？`,
+        okText: '确认导入',
+        cancelText: '取消',
+        onOk: () => resolve(true),
+        onCancel: () => resolve(false)
+      })
+    })
+
+    if (!confirmed) {
+      return
+    }
+
+    restoreLoading.value[dbName] = true
+    backupLogContent.value = ''
+    showBackupLogModal.value = true
+
+    // 监听导入日志
+    const logListener = (_evt: unknown, message: string) => {
+      backupLogContent.value += message
+    }
+    window.electron.ipcRenderer.on('envhub:pg:restore:log', logListener)
+
+    try {
+      await window.electron.ipcRenderer.invoke('envhub:pg:restore', {
+        pgVersion: currentPgVersion.value,
+        dbName,
+        username,
+        password,
+        filePath: selectResult.filePath
+      })
+
+      backupLogContent.value += '\n✅ 导入成功\n'
+      Message.success('数据库导入成功')
+      await loadDatabases()
+    } finally {
+      // @ts-ignore - removeListener is deprecated but required for compatibility
+      window.electron.ipcRenderer.removeListener('envhub:pg:restore:log', logListener)
+      restoreLoading.value[dbName] = false
+    }
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : '未知错误'
+    backupLogContent.value += `\n❌ 导入失败: ${message}\n`
+    Message.error(`导入失败: ${message}`)
+    restoreLoading.value[dbName] = false
+  }
+}
+
+// 关闭日志弹窗
+function closeBackupLogModal(): void {
+  showBackupLogModal.value = false
+  backupLogContent.value = ''
+}
+
 onMounted(() => {
   // 初始化时不执行任何操作
 })
@@ -248,7 +389,7 @@ onMounted(() => {
 
 <template>
   <div class="w-full">
-    <!-- Tab 切换 -->
+    <!-- Tab 切换和操作按钮 -->
     <div class="mb-4 flex gap-2">
       <a-button
         :type="state.activeTab === 'versions' ? 'primary' : 'outline'"
@@ -264,23 +405,21 @@ onMounted(() => {
       >
         数据库管理
       </a-button>
+      <a-button
+        type="outline"
+        size="small"
+        :loading="fetchingVersions"
+        @click="refreshVersions()"
+      >
+        <template #icon>
+          <icon-refresh />
+        </template>
+        刷新版本列表
+      </a-button>
     </div>
 
     <!-- 版本管理 -->
     <div v-if="state.activeTab === 'versions'" class="w-full">
-      <div class="mb-4">
-        <a-button
-          type="outline"
-          size="small"
-          :loading="fetchingVersions"
-          @click="refreshVersions()"
-        >
-          <template #icon>
-            <icon-refresh />
-          </template>
-          刷新版本列表
-        </a-button>
-      </div>
 
       <a-table
         :columns="[
@@ -406,10 +545,30 @@ onMounted(() => {
             </a-button>
           </a-space>
         </template>
-        <template #backup>
+        <template #backup="{ record }">
           <a-space>
-            <a-button type="text" size="small">点击备份</a-button>
-            <a-button type="text" size="small">导入</a-button>
+            <a-button
+              type="text"
+              size="small"
+              :loading="backupLoading[record.dbName]"
+              @click="handleBackup(record.dbName, record.username, record.password)"
+            >
+              <template #icon>
+                <icon-export />
+              </template>
+              备份
+            </a-button>
+            <a-button
+              type="text"
+              size="small"
+              :loading="restoreLoading[record.dbName]"
+              @click="handleRestore(record.dbName, record.username, record.password)"
+            >
+              <template #icon>
+                <icon-import />
+              </template>
+              导入
+            </a-button>
           </a-space>
         </template>
         <template #actions="{ record }">
@@ -484,5 +643,20 @@ onMounted(() => {
     </a-modal>
 
     <InstallProgressModal :progress="installProgress" @close="closeInstallProgress" />
+
+    <!-- 备份/导入日志弹窗 -->
+    <a-modal
+      v-model:visible="showBackupLogModal"
+      title="备份/导入日志"
+      :footer="false"
+      width="800px"
+    >
+      <div class="bg-gray-900 text-green-400 p-4 rounded font-mono text-sm max-h-96 overflow-y-auto whitespace-pre-wrap">
+        {{ backupLogContent || '等待日志输出...' }}
+      </div>
+      <template #footer>
+        <a-button type="primary" @click="closeBackupLogModal">关闭</a-button>
+      </template>
+    </a-modal>
   </div>
 </template>

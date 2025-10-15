@@ -1,4 +1,4 @@
-import { app, shell, BrowserWindow, ipcMain } from 'electron'
+import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
 import { homedir } from 'os'
 import { join } from 'path'
 import { mkdirSync } from 'fs'
@@ -480,6 +480,178 @@ app.whenReady().then(() => {
         logInfo(`Failed to delete database: ${message}`)
         throw error
       }
+    }
+  )
+
+  // 选择备份保存路径
+  ipcMain.handle(
+    'envhub:pg:selectBackupPath',
+    async (_evt, args: { dbName: string }) => {
+      const result = await dialog.showSaveDialog({
+        title: '选择备份保存位置',
+        defaultPath: `${args.dbName}-${new Date().toISOString().split('T')[0]}.sql`,
+        filters: [
+          { name: 'SQL 备份文件', extensions: ['sql'] },
+          { name: '所有文件', extensions: ['*'] }
+        ]
+      })
+
+      if (result.canceled || !result.filePath) {
+        return { canceled: true }
+      }
+
+      return { canceled: false, filePath: result.filePath }
+    }
+  )
+
+  // 选择恢复文件
+  ipcMain.handle('envhub:pg:selectRestoreFile', async () => {
+    const result = await dialog.showOpenDialog({
+      title: '选择备份文件',
+      filters: [
+        { name: 'SQL 备份文件', extensions: ['sql'] },
+        { name: 'PostgreSQL 备份', extensions: ['dump', 'tar'] },
+        { name: '所有文件', extensions: ['*'] }
+      ],
+      properties: ['openFile']
+    })
+
+    if (result.canceled || result.filePaths.length === 0) {
+      return { canceled: true }
+    }
+
+    return { canceled: false, filePath: result.filePaths[0] }
+  })
+
+  // 备份数据库
+  ipcMain.handle(
+    'envhub:pg:backup',
+    async (
+      evt,
+      args: { pgVersion: string; dbName: string; username: string; password: string; filePath: string }
+    ) => {
+      const dp = detectPlatform()
+      const pgBase = toolchainRoot('pg', args.pgVersion, dp)
+      const binDir = join(pgBase, 'pgsql', 'bin')
+      const pgDump = process.platform === 'win32' ? join(binDir, 'pg_dump.exe') : join(binDir, 'pg_dump')
+
+      logInfo(`Backing up database ${args.dbName} to ${args.filePath}`)
+
+      return new Promise((resolve, reject) => {
+        const env = { ...process.env, PGPASSWORD: args.password }
+        const child = spawn(
+          pgDump,
+          [
+            '-d', args.dbName,
+            '-U', args.username,
+            '-h', 'localhost',
+            '--no-owner',
+            '--no-privileges',
+            '-f', args.filePath
+          ],
+          { env }
+        )
+
+        let output = ''
+        let errorOutput = ''
+
+        child.stdout?.on('data', (data) => {
+          const message = data.toString()
+          output += message
+          evt.sender.send('envhub:pg:backup:log', message)
+        })
+
+        child.stderr?.on('data', (data) => {
+          const message = data.toString()
+          errorOutput += message
+          evt.sender.send('envhub:pg:backup:log', message)
+        })
+
+        child.on('close', (code) => {
+          if (code === 0) {
+            logInfo(`Backup completed: ${args.filePath}`)
+            resolve({ ok: true, filePath: args.filePath })
+          } else {
+            const error = `Backup failed with code ${code}: ${errorOutput}`
+            logInfo(error)
+            reject(new Error(error))
+          }
+        })
+
+        child.on('error', (err) => {
+          logInfo(`Backup error: ${err.message}`)
+          reject(err)
+        })
+      })
+    }
+  )
+
+  // 恢复/导入数据库
+  ipcMain.handle(
+    'envhub:pg:restore',
+    async (
+      evt,
+      args: {
+        pgVersion: string
+        dbName: string
+        username: string
+        password: string
+        filePath: string
+      }
+    ) => {
+      const dp = detectPlatform()
+      const pgBase = toolchainRoot('pg', args.pgVersion, dp)
+      const binDir = join(pgBase, 'pgsql', 'bin')
+      const psql = process.platform === 'win32' ? join(binDir, 'psql.exe') : join(binDir, 'psql')
+
+      logInfo(`Restoring database ${args.dbName} from ${args.filePath}`)
+
+      return new Promise((resolve, reject) => {
+        const env = { ...process.env, PGPASSWORD: args.password }
+        const child = spawn(
+          psql,
+          [
+            '-d', args.dbName,
+            '-U', args.username,
+            '-h', 'localhost',
+            '-f', args.filePath,
+            '--single-transaction',
+            '--set', 'ON_ERROR_STOP=on'
+          ],
+          { env }
+        )
+
+        let output = ''
+        let errorOutput = ''
+
+        child.stdout?.on('data', (data) => {
+          const message = data.toString()
+          output += message
+          evt.sender.send('envhub:pg:restore:log', message)
+        })
+
+        child.stderr?.on('data', (data) => {
+          const message = data.toString()
+          errorOutput += message
+          evt.sender.send('envhub:pg:restore:log', message)
+        })
+
+        child.on('close', (code) => {
+          if (code === 0) {
+            logInfo(`Restore completed: ${args.dbName}`)
+            resolve({ ok: true })
+          } else {
+            const error = `Restore failed with code ${code}: ${errorOutput}`
+            logInfo(error)
+            reject(new Error(error))
+          }
+        })
+
+        child.on('error', (err) => {
+          logInfo(`Restore error: ${err.message}`)
+          reject(err)
+        })
+      })
     }
   )
 
