@@ -1343,7 +1343,32 @@ app.whenReady().then(() => {
 
     try {
       const content = await readFile(confPath, 'utf-8')
-      return { ok: true, content, dataDir }
+
+      // 解析配置文件中的关键配置项
+      const config: Record<string, string | number> = {}
+
+      const bindMatch = content.match(/^bind\s+(.+)/m)
+      if (bindMatch) config.bind = bindMatch[1].trim()
+
+      const portMatch = content.match(/^port\s+(\d+)/m)
+      if (portMatch) config.port = parseInt(portMatch[1])
+
+      const timeoutMatch = content.match(/^timeout\s+(\d+)/m)
+      if (timeoutMatch) config.timeout = parseInt(timeoutMatch[1])
+
+      const maxclientsMatch = content.match(/^maxclients\s+(\d+)/m)
+      if (maxclientsMatch) config.maxclients = parseInt(maxclientsMatch[1])
+
+      const databasesMatch = content.match(/^databases\s+(\d+)/m)
+      if (databasesMatch) config.databases = parseInt(databasesMatch[1])
+
+      const requirepassMatch = content.match(/^requirepass\s+(.+)/m)
+      if (requirepassMatch) config.requirepass = requirepassMatch[1].trim()
+
+      const maxmemoryMatch = content.match(/^maxmemory\s+(.+)/m)
+      if (maxmemoryMatch) config.maxmemory = maxmemoryMatch[1].trim()
+
+      return { ok: true, content, dataDir, config }
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error)
       throw new Error(`读取配置文件失败: ${message}`)
@@ -1539,9 +1564,8 @@ app.whenReady().then(() => {
         const pattern = args.pattern || '*'
 
         // 获取键列表
-        let keysOutput: string
         const authParam = password ? `-a "${password}"` : ''
-        keysOutput = execSync(
+        const keysOutput = execSync(
           `"${cliExe}" -p ${port} ${authParam} -n ${args.db} --scan --pattern "${pattern}" 2>/dev/null`,
           { encoding: 'utf8' }
         )
