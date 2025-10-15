@@ -2,8 +2,13 @@ name: Check Redis Updates
 
 on:
   schedule:
-    - cron: '0 1 * * *'  # 每天凌晨 1 点检查
+    - cron: '0 1 * * *'  # 注意：UTC 01:00 执行，需按你的本地时区换算
   workflow_dispatch:
+
+# 触发其它 workflow（workflow_dispatch）需要 actions: write；其余最小权限
+permissions:
+  contents: read
+  actions: write
 
 jobs:
   check-updates:
@@ -17,21 +22,26 @@ jobs:
 
       - name: Check for new Redis versions
         id: check
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # 获取最新的 6 个稳定版本
-          LATEST_VERSIONS=$(curl -s "https://api.github.com/repos/redis/redis/tags?per_page=100" | \
-            jq -r '.[].name' | \
-            grep -E '^[678]\.[0-9]+\.[0-9]+$' | \
-            sort -V | \
-            tail -6)
+          set -euo pipefail
+
+          # 认证请求，提升 rate limit
+          LATEST_VERSIONS=$(curl -fsSL \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/redis/redis/tags?per_page=100" \
+            | jq -r '.[].name' \
+            | grep -E '^[678]\.[0-9]+\.[0-9]+$' \
+            | sort -V | tail -6)
 
           echo "Latest Redis versions:"
           echo "$LATEST_VERSIONS"
 
-          # 检查哪些版本尚未构建
           NEW_VERSIONS=""
           for VERSION in $LATEST_VERSIONS; do
-            if ! gh release view redis-${VERSION} --repo ${{ github.repository }} >/dev/null 2>&1; then
+            if ! gh release view "redis-${VERSION}" --repo "${{ github.repository }}" >/dev/null 2>&1; then
               echo "New version found: $VERSION"
               if [ -z "$NEW_VERSIONS" ]; then
                 NEW_VERSIONS="$VERSION"
@@ -42,15 +52,13 @@ jobs:
           done
 
           if [ -n "$NEW_VERSIONS" ]; then
-            echo "has_updates=true" >> $GITHUB_OUTPUT
-            echo "new_versions=$NEW_VERSIONS" >> $GITHUB_OUTPUT
+            echo "has_updates=true" >> "$GITHUB_OUTPUT"
+            echo "new_versions=$NEW_VERSIONS" >> "$GITHUB_OUTPUT"
             echo "Found new versions: $NEW_VERSIONS"
           else
-            echo "has_updates=false" >> $GITHUB_OUTPUT
+            echo "has_updates=false" >> "$GITHUB_OUTPUT"
             echo "No new versions to build"
           fi
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   trigger-build:
     needs: check-updates
@@ -58,22 +66,22 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Trigger Redis build
+      - name: Trigger Redis build (workflow_dispatch)
         uses: actions/github-script@v7
         with:
           script: |
             await github.rest.actions.createWorkflowDispatch({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              workflow_id: 'build-redis.yml',
+              workflow_id: 'build-redis.yml', // 确认与你的构建工作流文件名一致
               ref: 'main',
               inputs: {
                 redis_versions: '${{ needs.check-updates.outputs.new_versions }}'
               }
             })
 
-      - name: Send notification
+      - name: Summary
         run: |
-          echo "## 🚀 Redis 新版本检测" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "触发构建版本: ${{ needs.check-updates.outputs.new_versions }}" >> $GITHUB_STEP_SUMMARY
+          echo "## 🚀 Redis 新版本检测" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "触发构建版本: ${{ needs.check-updates.outputs.new_versions }}" >> "$GITHUB_STEP_SUMMARY"
