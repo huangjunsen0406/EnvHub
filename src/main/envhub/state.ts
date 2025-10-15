@@ -1,10 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'fs'
 import { join } from 'path'
-import { envhubRoot, toolchainRoot } from './paths'
+import { envhubRoot, toolchainRoot, redisDataDir } from './paths'
 import { DetectedPlatform } from './platform'
 import { writeShims, removeShims } from './shims'
 import { execSync } from 'child_process'
-
+import { writeRedisCliShim } from './installers/redis'
+import { logInfo } from './log'
 export type Tool = 'python' | 'node' | 'pg' | 'java' | 'redis'
 
 interface CurrentState {
@@ -19,7 +20,9 @@ export function getCurrent(): CurrentState {
   try {
     const p = currentStatePath()
     if (existsSync(p)) return JSON.parse(readFileSync(p, 'utf8')) as CurrentState
-  } catch {}
+  } catch (e: unknown) {
+    logInfo(`Start current failed: ${e instanceof Error ? e.message : String(e)}`)
+  }
   return { current: {} }
 }
 
@@ -134,10 +137,13 @@ export function updateShimsForTool(tool: Tool, version: string, dp: DetectedPlat
     const binDir = isWin ? base : join(base, 'bin')
     const serverExe = isWin ? join(base, 'redis-server.exe') : join(binDir, 'redis-server')
     const cliExe = isWin ? join(base, 'redis-cli.exe') : join(binDir, 'redis-cli')
-    writeShims(dp, [
-      { name: 'redis-server', target: serverExe },
-      { name: 'redis-cli', target: cliExe }
-    ])
+
+    // 使用智能 shim 生成器为 redis-cli
+    const dataDir = redisDataDir(version, 'main')
+    const confPath = join(dataDir, 'redis.conf')
+    writeRedisCliShim(isWin ? 'win-x64' : dp.platformKey, cliExe, confPath)
+
+    writeShims(dp, [{ name: 'redis-server', target: serverExe }])
   }
   setCurrent(tool, version)
 }

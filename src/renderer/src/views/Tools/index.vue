@@ -5,7 +5,7 @@ import PythonTab from './components/PythonTab.vue'
 import NodeTab from './components/NodeTab.vue'
 import PostgresTab from './components/PostgresTab.vue'
 import JavaTab from './components/JavaTab.vue'
-import RedisTab from './components/RedisTab.vue'
+import RedisTab from './components/RedisTab/index.vue'
 
 type Tool = 'python' | 'node' | 'pg' | 'java' | 'redis'
 

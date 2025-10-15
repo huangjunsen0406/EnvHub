@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted, watch } from 'vue'
 import {
   IconDelete,
   IconCloudDownload,
@@ -7,17 +7,15 @@ import {
   IconCodeBlock
 } from '@arco-design/web-vue/es/icon'
 import { Message } from '@arco-design/web-vue'
-import { useToolVersion } from '../composables/useToolVersion'
-import InstallProgressModal from './InstallProgressModal.vue'
+import { useToolVersion } from '../../../composables/useToolVersion'
+import InstallProgressModal from '../../InstallProgressModal.vue'
 
 const {
-  fetchingVersions,
   installingVersions,
   installProgress,
   onlineVersions,
   isInstalled,
   isCurrent,
-  refreshVersions,
   useVersion,
   unsetCurrent,
   uninstall,
@@ -44,35 +42,30 @@ async function checkRedisStatus(v: string): Promise<void> {
   }
 }
 
-// 重写 useVersion 以支持 Redis 状态检查
 async function useRedisVersion(version: string): Promise<void> {
   await useVersion(version)
   await checkRedisStatus(version)
 }
 
-// 重写 unsetCurrent 以支持 Redis 状态检查
 async function unsetRedisCurrent(): Promise<void> {
   await unsetCurrent()
-  // Redis 停用后刷新所有版本状态
   const versions = Object.keys(redisStatus.value)
   for (const v of versions) {
     await checkRedisStatus(v)
   }
 }
 
-// 打开 Redis 终端
 async function openRedisTerminal(version: string): Promise<void> {
   try {
     await window.electron.ipcRenderer.invoke('envhub:redis:openTerminal', {
-      version,
-      port: 6379
+      version
+      // 不传 port，让后端从配置文件读取实际端口
     })
   } catch (error) {
     console.error('Failed to open Redis terminal:', error)
   }
 }
 
-// 重启 Redis
 async function restartRedis(version: string): Promise<void> {
   try {
     await window.electron.ipcRenderer.invoke('envhub:redis:restart', {
@@ -87,7 +80,6 @@ async function restartRedis(version: string): Promise<void> {
   }
 }
 
-// 重载配置
 async function reloadRedisConfig(version: string): Promise<void> {
   try {
     await window.electron.ipcRenderer.invoke('envhub:redis:reload', {
@@ -100,19 +92,34 @@ async function reloadRedisConfig(version: string): Promise<void> {
     Message.error(message)
   }
 }
+
+// 组件挂载时检查当前版本的状态
+onMounted(async () => {
+  // 等待 onlineVersions 加载完成
+  await new Promise((resolve) => setTimeout(resolve, 100))
+
+  // 检查当前版本的运行状态
+  const currentVersion = onlineVersions.value.find((v) => isCurrent(v.version))
+  if (currentVersion) {
+    await checkRedisStatus(currentVersion.version)
+  }
+})
+
+// 监听 onlineVersions 变化，自动检查当前版本状态
+watch(
+  onlineVersions,
+  async (versions) => {
+    const currentVersion = versions.find((v) => isCurrent(v.version))
+    if (currentVersion) {
+      await checkRedisStatus(currentVersion.version)
+    }
+  },
+  { immediate: true }
+)
 </script>
 
 <template>
   <div class="w-full">
-    <div class="mb-4">
-      <a-button type="outline" size="small" :loading="fetchingVersions" @click="refreshVersions()">
-        <template #icon>
-          <icon-refresh />
-        </template>
-        刷新版本列表
-      </a-button>
-    </div>
-
     <a-table
       :columns="columns"
       :data="onlineVersions"
@@ -131,9 +138,9 @@ async function reloadRedisConfig(version: string): Promise<void> {
               redisStatus[record.version].port
             }}
           </a-tag>
-          <a-tag v-else-if="isCurrent(record.version) && isInstalled(record.version)" color="gray"
-            >已停止</a-tag
-          >
+          <a-tag v-else-if="isCurrent(record.version) && isInstalled(record.version)" color="gray">
+            已停止
+          </a-tag>
           <a-tag v-if="record.date" color="arcoblue">
             {{ new Date(record.date).toLocaleDateString() }}
           </a-tag>

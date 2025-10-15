@@ -156,9 +156,8 @@ app.whenReady().then(() => {
             try {
               const base = toolchainRoot('pg', cur, dp)
               const binDir = join(base, 'pgsql', 'bin')
-              const major = cur.split('.')[0]
               const { pgDataDir } = await import('./envhub/paths')
-              const dataDir = pgDataDir(major, 'main')
+              const dataDir = pgDataDir(cur, 'main')
               logInfo(`Stopping PostgreSQL for unset: ${dataDir}`)
               await pgStop(binDir, dataDir)
             } catch (e: unknown) {
@@ -174,9 +173,8 @@ app.whenReady().then(() => {
           try {
             const baseOld = toolchainRoot('pg', cur, dp)
             const binOld = join(baseOld, 'pgsql', 'bin')
-            const majorOld = cur.split('.')[0]
             const { pgDataDir } = await import('./envhub/paths')
-            const dataOld = pgDataDir(majorOld, 'main')
+            const dataOld = pgDataDir(cur, 'main')
             logInfo(`Stopping previous PostgreSQL: ${dataOld}`)
             await pgStop(binOld, dataOld)
           } catch (e: unknown) {
@@ -191,14 +189,29 @@ app.whenReady().then(() => {
         try {
           const base = toolchainRoot('pg', args.version, dp)
           const binDir = join(base, 'pgsql', 'bin')
-          const major = args.version.split('.')[0]
           const { pgDataDir } = await import('./envhub/paths')
-          const dataDir = pgDataDir(major, 'main')
+          const dataDir = pgDataDir(args.version, 'main')
           const running = await isPgRunning(dataDir)
           if (!running) {
             const logPath = join(dataDir, 'pg.log')
             logInfo(`Starting PostgreSQL for current version at ${dataDir}`)
             await pgStart(binDir, dataDir, logPath)
+
+            // Wait for PostgreSQL to be ready
+            await new Promise((resolve) => setTimeout(resolve, 2000))
+
+            // Create user database on first activation
+            try {
+              const username = process.env.USER || process.env.USERNAME || 'postgres'
+              logInfo(`Creating user database for ${username}`)
+              await createDatabase(binDir, username, username)
+              logInfo(`User database ${username} created successfully`)
+            } catch (dbError: unknown) {
+              // Database might already exist, ignore error
+              logInfo(
+                `Database creation skipped: ${dbError instanceof Error ? dbError.message : String(dbError)}`
+              )
+            }
           }
         } catch (e: unknown) {
           logInfo(`Start current failed: ${e instanceof Error ? e.message : String(e)}`)
@@ -218,9 +231,27 @@ app.whenReady().then(() => {
             try {
               const base = toolchainRoot('redis', cur, dp)
               const binDir = join(base, dp.platformKey === 'win-x64' ? '' : 'bin')
-              logInfo(`Stopping Redis for unset (port ${defaultPort})`)
+
+              // 读取配置文件获取实际端口
+              const { redisDataDir } = await import('./envhub/paths')
+              const { readFile } = await import('fs/promises')
+              const dataDir = redisDataDir(cur, 'main')
+              const confPath = join(dataDir, 'redis.conf')
+
+              let port = defaultPort
+              try {
+                const config = await readFile(confPath, 'utf-8')
+                const portMatch = config.match(/^port\s+(\d+)/m)
+                if (portMatch) {
+                  port = parseInt(portMatch[1]) || defaultPort
+                }
+              } catch {
+                // 配置文件读取失败，使用默认端口
+              }
+
+              logInfo(`Stopping Redis ${cur} on port ${port}`)
               const { redisStop } = await import('./envhub/redis-manager')
-              await redisStop(binDir, defaultPort)
+              await redisStop(binDir, port)
             } catch (e: unknown) {
               logInfo(`Stop on unset skipped/failed: ${e instanceof Error ? e.message : String(e)}`)
             }
@@ -234,9 +265,27 @@ app.whenReady().then(() => {
           try {
             const baseOld = toolchainRoot('redis', cur, dp)
             const binOld = join(baseOld, dp.platformKey === 'win-x64' ? '' : 'bin')
-            logInfo(`Stopping previous Redis (port ${defaultPort})`)
+
+            // 读取旧版本的配置文件获取实际端口
+            const { redisDataDir } = await import('./envhub/paths')
+            const { readFile } = await import('fs/promises')
+            const dataOldDir = redisDataDir(cur, 'main')
+            const confOldPath = join(dataOldDir, 'redis.conf')
+
+            let oldPort = defaultPort
+            try {
+              const oldConfig = await readFile(confOldPath, 'utf-8')
+              const portMatch = oldConfig.match(/^port\s+(\d+)/m)
+              if (portMatch) {
+                oldPort = parseInt(portMatch[1]) || defaultPort
+              }
+            } catch {
+              // 配置文件读取失败，使用默认端口
+            }
+
+            logInfo(`Stopping previous Redis ${cur} on port ${oldPort}`)
             const { redisStop } = await import('./envhub/redis-manager')
-            await redisStop(binOld, defaultPort)
+            await redisStop(binOld, oldPort)
           } catch (e: unknown) {
             logInfo(`Stop previous failed: ${e instanceof Error ? e.message : String(e)}`)
           }
@@ -331,8 +380,7 @@ app.whenReady().then(() => {
       logInfo(`User and database created`)
 
       // 保存元数据
-      const majorVersion = args.pgVersion.split('.')[0]
-      addDatabaseMetadata(majorVersion, 'main', {
+      addDatabaseMetadata(args.pgVersion, 'main', {
         dbName: args.dbName,
         username: args.username,
         password: args.password,
@@ -394,8 +442,7 @@ app.whenReady().then(() => {
           })
 
         // 读取元数据
-        const majorVersion = args.pgVersion.split('.')[0]
-        const metadata = getAllDatabaseMetadata(majorVersion, 'main')
+        const metadata = getAllDatabaseMetadata(args.pgVersion, 'main')
 
         // 合并数据
         const databases = dbList.map((db) => {
@@ -442,8 +489,7 @@ app.whenReady().then(() => {
         )
 
         // 更新元数据
-        const majorVersion = args.pgVersion.split('.')[0]
-        updateDatabasePassword(majorVersion, 'main', args.username, args.newPassword)
+        updateDatabasePassword(args.pgVersion, 'main', args.username, args.newPassword)
 
         logInfo(`Password changed for user ${args.username}`)
         return { ok: true }
@@ -477,8 +523,7 @@ app.whenReady().then(() => {
         })
 
         // 删除元数据
-        const majorVersion = args.pgVersion.split('.')[0]
-        deleteDatabaseMetadata(majorVersion, 'main', args.dbName)
+        deleteDatabaseMetadata(args.pgVersion, 'main', args.dbName)
 
         logInfo(`Database ${args.dbName} deleted`)
         return { ok: true }
@@ -678,7 +723,7 @@ app.whenReady().then(() => {
       args: { pgVersion: string; cluster: string; dataDir: string; binDir: string; port?: number }
     ) => {
       const dp = detectPlatform()
-      const name = `envhub-pg-${args.pgVersion.split('.')[0]}-${args.cluster}`
+      const name = `envhub-pg-${args.pgVersion.replace(/\./g, '-')}-${args.cluster}`
       const logPath =
         process.platform === 'win32' ? `${args.dataDir}\\pg.log` : `${args.dataDir}/pg.log`
       if (dp.os === 'mac') {
@@ -734,7 +779,7 @@ app.whenReady().then(() => {
     'envhub:pg:disableAutostart',
     async (_evt, args: { pgVersion: string; cluster: string }) => {
       const dp = detectPlatform()
-      const name = `envhub-pg-${args.pgVersion.split('.')[0]}-${args.cluster}`
+      const name = `envhub-pg-${args.pgVersion.replace(/\./g, '-')}-${args.cluster}`
       if (dp.os === 'mac') {
         const plist = `${process.env.HOME}/Library/LaunchAgents/com.${name}.plist`
         await new Promise<void>((resolve, reject) => {
@@ -782,7 +827,14 @@ app.whenReady().then(() => {
         } else if (args.tool === 'java') {
           versions = await fetchJavaVersions(
             dp,
-            (args.distribution as 'temurin' | 'oracle' | 'corretto' | 'graalvm' | 'zulu' | 'liberica' | 'microsoft') || 'temurin',
+            (args.distribution as
+              | 'temurin'
+              | 'oracle'
+              | 'corretto'
+              | 'graalvm'
+              | 'zulu'
+              | 'liberica'
+              | 'microsoft') || 'temurin',
             forceRefresh
           )
         } else if (args.tool === 'redis') {
@@ -878,15 +930,9 @@ app.whenReady().then(() => {
           })
         }
 
-        // Python 安装后不自动激活，其他工具自动激活
-        if (tool !== 'python') {
-          logInfo(`Setting ${tool} ${version} as current version`)
-          setCurrent(tool, version)
-          updateShimsForTool(tool, version, dp)
-          logInfo(`${tool} ${version} installed successfully and set as current`)
-        } else {
-          logInfo(`${tool} ${version} installed successfully`)
-        }
+        // All tools require manual activation via "Use" button
+        logInfo(`${tool} ${version} installed successfully`)
+        // Note: User needs to click "启用" button to activate the installed version
 
         return { ok: true, savePath }
       } catch (error: unknown) {
@@ -932,7 +978,25 @@ app.whenReady().then(() => {
   ipcMain.handle(
     'envhub:redis:status',
     async (_evt, args: { redisVersion: string; port?: number }) => {
-      const port = args.port || 6379
+      let port = args.port || 6379
+
+      // 尝试从配置文件读取实际端口
+      if (!args.port) {
+        try {
+          const { redisDataDir } = await import('./envhub/paths')
+          const { readFile } = await import('fs/promises')
+          const dataDir = redisDataDir(args.redisVersion, 'main')
+          const confPath = join(dataDir, 'redis.conf')
+          const content = await readFile(confPath, 'utf-8')
+          const portMatch = content.match(/^port\s+(\d+)/m)
+          if (portMatch) {
+            port = parseInt(portMatch[1], 10)
+          }
+        } catch {
+          // 使用默认端口
+        }
+      }
+
       logInfo(`Checking Redis status on port ${port}`)
       return await getRedisStatus(port)
     }
@@ -1113,7 +1177,25 @@ app.whenReady().then(() => {
     'envhub:redis:openTerminal',
     async (_evt, args: { version: string; port?: number }) => {
       const platform = detectPlatform()
-      const port = args.port || 6379
+
+      // 如果没有指定端口，从配置文件读取
+      let port = args.port || 6379
+      if (!args.port) {
+        try {
+          const { redisDataDir } = await import('./envhub/paths')
+          const { readFile } = await import('fs/promises')
+          const dataDir = redisDataDir(args.version, 'main')
+          const confPath = join(dataDir, 'redis.conf')
+          const content = await readFile(confPath, 'utf-8')
+          const portMatch = content.match(/^port\s+(\d+)/m)
+          if (portMatch) {
+            port = parseInt(portMatch[1], 10)
+          }
+        } catch {
+          // 使用默认端口
+        }
+      }
+
       const binDir = join(
         toolchainRoot('redis', args.version, platform),
         platform.platformKey === 'win-x64' ? '' : 'bin'
@@ -1154,6 +1236,585 @@ app.whenReady().then(() => {
       }
 
       return { ok: true }
+    }
+  )
+
+  // Redis 重启
+  ipcMain.handle('envhub:redis:restart', async (_evt, args: { version: string }) => {
+    const platform = detectPlatform()
+    const base = toolchainRoot('redis', args.version, platform)
+    const binDir = join(base, platform.platformKey === 'win-x64' ? '' : 'bin')
+
+    logInfo(`Restarting Redis ${args.version}`)
+
+    try {
+      // 读取配置文件获取端口
+      const { redisDataDir } = await import('./envhub/paths')
+      const { readFile } = await import('fs/promises')
+      const dataDir = redisDataDir(args.version, 'main')
+      const confPath = join(dataDir, 'redis.conf')
+
+      let port = 6379 // 默认端口
+      try {
+        const content = await readFile(confPath, 'utf-8')
+        const portMatch = content.match(/^port\s+(\d+)/m)
+        if (portMatch) {
+          port = parseInt(portMatch[1])
+        }
+      } catch {
+        // 使用默认端口
+      }
+
+      // 先停止
+      const { redisStop } = await import('./envhub/redis-manager')
+      await redisStop(binDir, port)
+
+      // 等待停止完成
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+
+      // 重新启动
+      await redisStart(binDir, confPath)
+
+      logInfo(`Redis ${args.version} restarted successfully`)
+      return { ok: true }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error)
+      logInfo(`Failed to restart Redis: ${message}`)
+      throw error
+    }
+  })
+
+  // Redis 重载配置
+  ipcMain.handle('envhub:redis:reload', async (_evt, args: { version: string }) => {
+    const platform = detectPlatform()
+    const base = toolchainRoot('redis', args.version, platform)
+    const binDir = join(base, platform.platformKey === 'win-x64' ? '' : 'bin')
+
+    logInfo(`Reloading Redis ${args.version} config`)
+
+    try {
+      // 读取配置文件获取端口
+      const { redisDataDir } = await import('./envhub/paths')
+      const { readFile } = await import('fs/promises')
+      const dataDir = redisDataDir(args.version, 'main')
+      const confPath = join(dataDir, 'redis.conf')
+
+      let port = 6379 // 默认端口
+      try {
+        const content = await readFile(confPath, 'utf-8')
+        const portMatch = content.match(/^port\s+(\d+)/m)
+        if (portMatch) {
+          port = parseInt(portMatch[1])
+        }
+      } catch {
+        // 使用默认端口
+      }
+
+      // 先检查 Redis 是否在运行
+      const running = await isRedisRunning(port)
+      if (!running) {
+        throw new Error('Redis 未运行，无法重载配置。请先启用 Redis。')
+      }
+
+      const cliExe =
+        platform.platformKey === 'win-x64'
+          ? join(binDir, 'redis-cli.exe')
+          : join(binDir, 'redis-cli')
+
+      // 使用 redis-cli 发送 CONFIG REWRITE 命令重载配置
+      const { execSync } = await import('child_process')
+      execSync(`"${cliExe}" -p ${port} CONFIG REWRITE`, { encoding: 'utf8' })
+
+      logInfo(`Redis ${args.version} config reloaded successfully`)
+      return { ok: true }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error)
+      logInfo(`Failed to reload Redis config: ${message}`)
+      throw new Error(`重载配置失败: ${message}`)
+    }
+  })
+
+  // Redis 获取配置文件
+  ipcMain.handle('envhub:redis:getConfig', async (_evt, args: { version: string }) => {
+    const { redisDataDir } = await import('./envhub/paths')
+    const { readFile } = await import('fs/promises')
+    const dataDir = redisDataDir(args.version, 'main')
+    const confPath = join(dataDir, 'redis.conf')
+
+    try {
+      const content = await readFile(confPath, 'utf-8')
+      return { ok: true, content, dataDir }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error)
+      throw new Error(`读取配置文件失败: ${message}`)
+    }
+  })
+
+  // Redis 保存配置文件
+  ipcMain.handle(
+    'envhub:redis:saveConfig',
+    async (_evt, args: { version: string; content: string }) => {
+      const { redisDataDir } = await import('./envhub/paths')
+      const { writeFile } = await import('fs/promises')
+      const dataDir = redisDataDir(args.version, 'main')
+      const confPath = join(dataDir, 'redis.conf')
+
+      try {
+        await writeFile(confPath, args.content, 'utf-8')
+        logInfo(`Redis config saved for version ${args.version}`)
+        return { ok: true }
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error)
+        throw new Error(`保存配置文件失败: ${message}`)
+      }
+    }
+  )
+
+  // Redis 更新配置项
+  ipcMain.handle(
+    'envhub:redis:updateConfig',
+    async (
+      _evt,
+      args: { version: string; config: Record<string, unknown>; removeKeys?: string[] }
+    ) => {
+      const { redisDataDir } = await import('./envhub/paths')
+      const { readFile, writeFile } = await import('fs/promises')
+      const dataDir = redisDataDir(args.version, 'main')
+      const confPath = join(dataDir, 'redis.conf')
+
+      try {
+        const content = await readFile(confPath, 'utf-8')
+        let lines = content.split('\n')
+
+        // 移除可能冲突的 ACL 配置（CONFIG REWRITE 自动生成的）
+        // Redis 6.0+ 的 ACL 会覆盖 requirepass
+        lines = lines.filter(
+          (line) =>
+            !line.trim().startsWith('user default') &&
+            !line.trim().startsWith('latency-tracking-info-percentiles')
+        )
+
+        // 移除指定的配置项（例如取消密码）
+        if (args.removeKeys && args.removeKeys.length > 0) {
+          lines = lines.filter((line) => {
+            const trimmed = line.trim()
+            if (!trimmed || trimmed.startsWith('#')) return true
+            return !args.removeKeys!.some((key) => trimmed.startsWith(`${key} `) || trimmed === key)
+          })
+          logInfo(`Redis config removed keys: ${args.removeKeys.join(', ')}`)
+        }
+
+        // 更新或添加配置项
+        for (const [key, value] of Object.entries(args.config)) {
+          const configLine = `${key} ${value}`
+
+          // 查找配置项（跳过注释行）
+          let foundIndex = -1
+          for (let i = 0; i < lines.length; i++) {
+            const trimmed = lines[i].trim()
+            // 跳过空行和注释
+            if (!trimmed || trimmed.startsWith('#')) continue
+            // 检查是否是目标配置项
+            if (trimmed.startsWith(`${key} `) || trimmed === key) {
+              foundIndex = i
+              break
+            }
+          }
+
+          if (foundIndex >= 0) {
+            // 更新现有配置
+            lines[foundIndex] = configLine
+          } else {
+            // 添加新配置（在文件末尾添加，带注释说明）
+            lines.push(`# Added by EnvHub`)
+            lines.push(configLine)
+          }
+        }
+
+        await writeFile(confPath, lines.join('\n'), 'utf-8')
+        logInfo(
+          `Redis config updated for version ${args.version}: ${Object.keys(args.config).join(', ')}`
+        )
+        return { ok: true }
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error)
+        throw new Error(`更新配置失败: ${message}`)
+      }
+    }
+  )
+
+  // Redis 获取运行信息
+  ipcMain.handle('envhub:redis:info', async (_evt, args: { version: string }) => {
+    const platform = detectPlatform()
+    const base = toolchainRoot('redis', args.version, platform)
+    const binDir = join(base, platform.platformKey === 'win-x64' ? '' : 'bin')
+
+    try {
+      // 读取配置文件获取端口和密码
+      const { redisDataDir } = await import('./envhub/paths')
+      const { readFile } = await import('fs/promises')
+      const dataDir = redisDataDir(args.version, 'main')
+      const confPath = join(dataDir, 'redis.conf')
+
+      let port = 6379 // 默认端口
+      let password = ''
+      try {
+        const content = await readFile(confPath, 'utf-8')
+        const portMatch = content.match(/^port\s+(\d+)/m)
+        if (portMatch) {
+          port = parseInt(portMatch[1])
+        }
+        const passMatch = content.match(/^requirepass\s+(.+)/m)
+        if (passMatch) {
+          password = passMatch[1].trim()
+        }
+      } catch {
+        // 使用默认值
+      }
+
+      const running = await isRedisRunning(port)
+      if (!running) {
+        throw new Error('Redis 未运行')
+      }
+
+      const cliExe =
+        platform.platformKey === 'win-x64'
+          ? join(binDir, 'redis-cli.exe')
+          : join(binDir, 'redis-cli')
+
+      const { execSync } = await import('child_process')
+
+      // 使用数组参数避免命令注入和转义问题
+      let info: string
+      if (password) {
+        // 有密码：使用 -a 参数（警告信息会输出到 stderr）
+        info = execSync(`"${cliExe}" -p ${port} -a "${password}" INFO 2>/dev/null`, {
+          encoding: 'utf8'
+        })
+      } else {
+        // 无密码
+        info = execSync(`"${cliExe}" -p ${port} INFO`, { encoding: 'utf8' })
+      }
+
+      return { ok: true, info }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error)
+      throw new Error(`获取 Redis 信息失败: ${message}`)
+    }
+  })
+
+  // Redis 数据浏览 - 获取键列表
+  ipcMain.handle(
+    'envhub:redis:keys',
+    async (_evt, args: { version: string; db: number; pattern?: string }) => {
+      const platform = detectPlatform()
+      const base = toolchainRoot('redis', args.version, platform)
+      const binDir = join(base, platform.platformKey === 'win-x64' ? '' : 'bin')
+
+      try {
+        // 读取配置文件获取端口和密码
+        const { redisDataDir } = await import('./envhub/paths')
+        const { readFile } = await import('fs/promises')
+        const dataDir = redisDataDir(args.version, 'main')
+        const confPath = join(dataDir, 'redis.conf')
+
+        let port = 6379
+        let password = ''
+        try {
+          const content = await readFile(confPath, 'utf-8')
+          const portMatch = content.match(/^port\s+(\d+)/m)
+          if (portMatch) port = parseInt(portMatch[1])
+          const passMatch = content.match(/^requirepass\s+(.+)/m)
+          if (passMatch) password = passMatch[1].trim()
+        } catch {
+          // 使用默认值
+        }
+
+        const cliExe =
+          platform.platformKey === 'win-x64'
+            ? join(binDir, 'redis-cli.exe')
+            : join(binDir, 'redis-cli')
+
+        const { execSync } = await import('child_process')
+        const pattern = args.pattern || '*'
+
+        // 获取键列表
+        let keysOutput: string
+        const authParam = password ? `-a "${password}"` : ''
+        keysOutput = execSync(
+          `"${cliExe}" -p ${port} ${authParam} -n ${args.db} --scan --pattern "${pattern}" 2>/dev/null`,
+          { encoding: 'utf8' }
+        )
+
+        const keyNames = keysOutput
+          .trim()
+          .split('\n')
+          .filter((k) => k)
+
+        // 获取每个键的详细信息
+        const keys = await Promise.all(
+          keyNames.map(async (keyName) => {
+            try {
+              const typeOut = execSync(
+                `"${cliExe}" -p ${port} ${authParam} -n ${args.db} TYPE "${keyName}" 2>/dev/null`,
+                { encoding: 'utf8' }
+              ).trim()
+
+              const ttlOut = execSync(
+                `"${cliExe}" -p ${port} ${authParam} -n ${args.db} TTL "${keyName}" 2>/dev/null`,
+                { encoding: 'utf8' }
+              ).trim()
+
+              // 获取值大小（字节）
+              let size = 0
+              if (typeOut === 'string') {
+                const strlen = execSync(
+                  `"${cliExe}" -p ${port} ${authParam} -n ${args.db} STRLEN "${keyName}" 2>/dev/null`,
+                  { encoding: 'utf8' }
+                ).trim()
+                size = parseInt(strlen) || 0
+              }
+
+              return {
+                name: keyName,
+                type: typeOut,
+                ttl: parseInt(ttlOut),
+                size,
+                value: '' // 不在列表中获取值，点击编辑时再获取
+              }
+            } catch {
+              return { name: keyName, type: 'unknown', ttl: -1, size: 0, value: '' }
+            }
+          })
+        )
+
+        return { ok: true, keys }
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error)
+        throw new Error(`获取键列表失败: ${message}`)
+      }
+    }
+  )
+
+  // Redis 数据浏览 - 获取键值
+  ipcMain.handle(
+    'envhub:redis:get',
+    async (_evt, args: { version: string; db: number; key: string }) => {
+      const platform = detectPlatform()
+      const base = toolchainRoot('redis', args.version, platform)
+      const binDir = join(base, platform.platformKey === 'win-x64' ? '' : 'bin')
+
+      try {
+        const { redisDataDir } = await import('./envhub/paths')
+        const { readFile } = await import('fs/promises')
+        const dataDir = redisDataDir(args.version, 'main')
+        const confPath = join(dataDir, 'redis.conf')
+
+        let port = 6379
+        let password = ''
+        try {
+          const content = await readFile(confPath, 'utf-8')
+          const portMatch = content.match(/^port\s+(\d+)/m)
+          if (portMatch) port = parseInt(portMatch[1])
+          const passMatch = content.match(/^requirepass\s+(.+)/m)
+          if (passMatch) password = passMatch[1].trim()
+        } catch {
+          // 使用默认值
+        }
+
+        const cliExe =
+          platform.platformKey === 'win-x64'
+            ? join(binDir, 'redis-cli.exe')
+            : join(binDir, 'redis-cli')
+
+        const { execSync } = await import('child_process')
+        const authParam = password ? `-a "${password}"` : ''
+
+        // 获取类型
+        const typeOut = execSync(
+          `"${cliExe}" -p ${port} ${authParam} -n ${args.db} TYPE "${args.key}" 2>/dev/null`,
+          { encoding: 'utf8' }
+        ).trim()
+
+        // 获取TTL
+        const ttlOut = execSync(
+          `"${cliExe}" -p ${port} ${authParam} -n ${args.db} TTL "${args.key}" 2>/dev/null`,
+          { encoding: 'utf8' }
+        ).trim()
+
+        // 获取值
+        let value = ''
+        if (typeOut === 'string') {
+          value = execSync(
+            `"${cliExe}" -p ${port} ${authParam} -n ${args.db} GET "${args.key}" 2>/dev/null`,
+            { encoding: 'utf8' }
+          ).trim()
+        }
+
+        return {
+          ok: true,
+          name: args.key,
+          type: typeOut,
+          value,
+          ttl: parseInt(ttlOut)
+        }
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error)
+        throw new Error(`获取键值失败: ${message}`)
+      }
+    }
+  )
+
+  // Redis 数据浏览 - 设置键值
+  ipcMain.handle(
+    'envhub:redis:set',
+    async (
+      _evt,
+      args: {
+        version: string
+        db: number
+        key: string
+        value: string
+        type: string
+        ttl?: number
+      }
+    ) => {
+      const platform = detectPlatform()
+      const base = toolchainRoot('redis', args.version, platform)
+      const binDir = join(base, platform.platformKey === 'win-x64' ? '' : 'bin')
+
+      try {
+        const { redisDataDir } = await import('./envhub/paths')
+        const { readFile } = await import('fs/promises')
+        const dataDir = redisDataDir(args.version, 'main')
+        const confPath = join(dataDir, 'redis.conf')
+
+        let port = 6379
+        let password = ''
+        try {
+          const content = await readFile(confPath, 'utf-8')
+          const portMatch = content.match(/^port\s+(\d+)/m)
+          if (portMatch) port = parseInt(portMatch[1])
+          const passMatch = content.match(/^requirepass\s+(.+)/m)
+          if (passMatch) password = passMatch[1].trim()
+        } catch {
+          // 使用默认值
+        }
+
+        const cliExe =
+          platform.platformKey === 'win-x64'
+            ? join(binDir, 'redis-cli.exe')
+            : join(binDir, 'redis-cli')
+
+        const { execSync } = await import('child_process')
+        const authParam = password ? `-a "${password}"` : ''
+
+        // 根据数据类型设置值
+        if (args.type === 'string') {
+          // String 类型
+          if (args.ttl && args.ttl > 0) {
+            execSync(
+              `"${cliExe}" -p ${port} ${authParam} -n ${args.db} SET "${args.key}" "${args.value}" EX ${args.ttl} 2>/dev/null`,
+              { encoding: 'utf8' }
+            )
+          } else {
+            execSync(
+              `"${cliExe}" -p ${port} ${authParam} -n ${args.db} SET "${args.key}" "${args.value}" 2>/dev/null`,
+              { encoding: 'utf8' }
+            )
+          }
+        } else if (args.type === 'hash') {
+          // Hash 类型 - 值格式: field1 value1 field2 value2
+          execSync(
+            `"${cliExe}" -p ${port} ${authParam} -n ${args.db} HSET "${args.key}" ${args.value} 2>/dev/null`,
+            { encoding: 'utf8' }
+          )
+        } else if (args.type === 'list') {
+          // List 类型 - 值格式: value1 value2 value3
+          const values = args.value.split(/\s+/).filter((v) => v)
+          for (const val of values) {
+            execSync(
+              `"${cliExe}" -p ${port} ${authParam} -n ${args.db} RPUSH "${args.key}" "${val}" 2>/dev/null`,
+              { encoding: 'utf8' }
+            )
+          }
+        } else if (args.type === 'set') {
+          // Set 类型 - 值格式: member1 member2 member3
+          const members = args.value.split(/\s+/).filter((v) => v)
+          for (const member of members) {
+            execSync(
+              `"${cliExe}" -p ${port} ${authParam} -n ${args.db} SADD "${args.key}" "${member}" 2>/dev/null`,
+              { encoding: 'utf8' }
+            )
+          }
+        } else if (args.type === 'zset') {
+          // Sorted Set 类型 - 值格式: score1 member1 score2 member2
+          execSync(
+            `"${cliExe}" -p ${port} ${authParam} -n ${args.db} ZADD "${args.key}" ${args.value} 2>/dev/null`,
+            { encoding: 'utf8' }
+          )
+        }
+
+        // 设置 TTL（如果指定）
+        if (args.ttl && args.ttl > 0 && args.type !== 'string') {
+          execSync(
+            `"${cliExe}" -p ${port} ${authParam} -n ${args.db} EXPIRE "${args.key}" ${args.ttl} 2>/dev/null`,
+            { encoding: 'utf8' }
+          )
+        }
+
+        return { ok: true }
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error)
+        throw new Error(`设置键值失败: ${message}`)
+      }
+    }
+  )
+
+  // Redis 数据浏览 - 删除键
+  ipcMain.handle(
+    'envhub:redis:del',
+    async (_evt, args: { version: string; db: number; key: string }) => {
+      const platform = detectPlatform()
+      const base = toolchainRoot('redis', args.version, platform)
+      const binDir = join(base, platform.platformKey === 'win-x64' ? '' : 'bin')
+
+      try {
+        const { redisDataDir } = await import('./envhub/paths')
+        const { readFile } = await import('fs/promises')
+        const dataDir = redisDataDir(args.version, 'main')
+        const confPath = join(dataDir, 'redis.conf')
+
+        let port = 6379
+        let password = ''
+        try {
+          const content = await readFile(confPath, 'utf-8')
+          const portMatch = content.match(/^port\s+(\d+)/m)
+          if (portMatch) port = parseInt(portMatch[1])
+          const passMatch = content.match(/^requirepass\s+(.+)/m)
+          if (passMatch) password = passMatch[1].trim()
+        } catch {
+          // 使用默认值
+        }
+
+        const cliExe =
+          platform.platformKey === 'win-x64'
+            ? join(binDir, 'redis-cli.exe')
+            : join(binDir, 'redis-cli')
+
+        const { execSync } = await import('child_process')
+        const authParam = password ? `-a "${password}"` : ''
+
+        execSync(
+          `"${cliExe}" -p ${port} ${authParam} -n ${args.db} DEL "${args.key}" 2>/dev/null`,
+          { encoding: 'utf8' }
+        )
+
+        return { ok: true }
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error)
+        throw new Error(`删除键失败: ${message}`)
+      }
     }
   )
 

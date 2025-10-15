@@ -47,22 +47,6 @@ export async function installPostgres(
     auth: 'trust'
   })
 
-  // Auto-start PostgreSQL
-  const logFile = join(dataDir, 'pg.log')
-  await pgStart(binDir, dataDir, logFile)
-
-  // 等待 PostgreSQL 启动完成
-  await new Promise((resolve) => setTimeout(resolve, 2000))
-
-  // 创建与当前用户名同名的数据库，方便直接使用 psql 连接
-  try {
-    const username = process.env.USER || process.env.USERNAME || 'postgres'
-    await createDatabase(binDir, username, username)
-  } catch (error) {
-    // 忽略创建失败（可能已存在）
-    console.warn('Failed to create user database:', error)
-  }
-
   return { binDir, dataDir }
 }
 
@@ -75,7 +59,7 @@ export interface PgInitOptions {
 }
 
 export async function initDb(pgBinDir: string, opts: PgInitOptions): Promise<string> {
-  const dataDir = pgDataDir(opts.version.split('.')[0], opts.cluster)
+  const dataDir = pgDataDir(opts.version, opts.cluster)
   mkdirSync(dataDir, { recursive: true })
 
   // 检查是否已经初始化过（存在 PG_VERSION 文件表示已初始化）

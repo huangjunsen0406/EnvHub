@@ -80,8 +80,7 @@ const currentPgVersion = computed(() => {
 
 async function checkPgStatus(v: string): Promise<void> {
   try {
-    const pgMajor = v.split('.')[0]
-    const dataDir = `~/.envhub/pg/${pgMajor}/${state.cluster}`
+    const dataDir = `~/.envhub/pg/${v}/${state.cluster}`
     const status = await window.electron.ipcRenderer.invoke('envhub:pg:status', {
       pgVersion: v,
       dataDir
@@ -435,10 +434,10 @@ onMounted(() => {
             <a-tag v-if="isInstalled(record.version)" color="green">已安装</a-tag>
             <a-tag v-else color="gray">未安装</a-tag>
             <a-tag v-if="isCurrent(record.version)" color="blue">当前版本</a-tag>
-            <a-tag v-if="pgStatus[record.version]?.running" color="arcoblue">
+            <a-tag v-if="isCurrent(record.version) && pgStatus[record.version]?.running" color="arcoblue">
               运行中 PID:{{ pgStatus[record.version].pid }} 端口:{{ pgStatus[record.version].port }}
             </a-tag>
-            <a-tag v-else-if="isInstalled(record.version)" color="gray">已停止</a-tag>
+            <a-tag v-else-if="isCurrent(record.version) && isInstalled(record.version)" color="gray">已停止</a-tag>
             <a-tag v-if="record.date" color="arcoblue">
               {{ new Date(record.date).toLocaleDateString() }}
             </a-tag>
@@ -488,7 +487,7 @@ onMounted(() => {
               </a-button>
             </a-popconfirm>
             <a-button
-              v-if="isInstalled(record.version)"
+              v-if="isInstalled(record.version) && isCurrent(record.version)"
               type="text"
               size="small"
               @click="checkPgStatus(record.version)"

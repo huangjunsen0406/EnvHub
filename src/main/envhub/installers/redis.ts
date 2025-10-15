@@ -2,7 +2,7 @@ import { readdirSync, existsSync, rmSync, renameSync, mkdirSync, writeFileSync }
 import { join } from 'path'
 import { execSync } from 'child_process'
 import { DetectedPlatform } from '../platform'
-import { toolchainRoot, redisDataDir, redisLogDir } from '../paths'
+import { toolchainRoot, redisDataDir, redisLogDir, shimsDir } from '../paths'
 import { extractArchive, removeQuarantineAttr } from '../extract'
 import { writeShims } from '../shims'
 import { spawn } from 'child_process'
@@ -65,15 +65,48 @@ export async function installRedis(opts: RedisInstallOptions): Promise<{
   const serverExe = isWin ? join(baseDir, 'redis-server.exe') : join(binDir, 'redis-server')
   const cliExe = isWin ? join(baseDir, 'redis-cli.exe') : join(binDir, 'redis-cli')
 
-  writeShims(platformKey, [
-    { name: 'redis-server', target: serverExe },
-    { name: 'redis-cli', target: cliExe }
-  ])
+  // 为 redis-cli 创建智能 shim，自动读取配置文件中的端口
+  writeRedisCliShim(platformKey, cliExe, confPath)
+
+  writeShims(platformKey, [{ name: 'redis-server', target: serverExe }])
 
   // Auto-start Redis
   await redisStart(binDir, confPath)
 
   return { binDir, confPath }
+}
+
+export function writeRedisCliShim(platformKey: string, cliExe: string, confPath: string): void {
+  const isWin = platformKey === 'win-x64'
+  const dir = shimsDir()
+
+  if (isWin) {
+    // Windows batch script
+    const script = `@echo off
+set "REDIS_CONF=${confPath}"
+set "REDIS_PORT=6379"
+if exist "%REDIS_CONF%" (
+  for /f "tokens=2" %%p in ('findstr /b /c:"port " "%REDIS_CONF%"') do set "REDIS_PORT=%%p"
+)
+"${cliExe}" -p %REDIS_PORT% %*
+`
+    writeFileSync(join(dir, 'redis-cli.cmd'), script, 'utf8')
+  } else {
+    // Unix shell script
+    const script = `#!/usr/bin/env bash
+REDIS_CONF="${confPath}"
+REDIS_PORT=6379
+if [ -f "$REDIS_CONF" ]; then
+  PORT_LINE=$(grep "^port " "$REDIS_CONF" 2>/dev/null | head -1)
+  if [ -n "$PORT_LINE" ]; then
+    REDIS_PORT=$(echo "$PORT_LINE" | awk '{print $2}')
+  fi
+fi
+exec '${cliExe.replace(/'/g, "'\\''")}' -p "$REDIS_PORT" "$@"
+`
+    const shimPath = join(dir, 'redis-cli')
+    writeFileSync(shimPath, script, { encoding: 'utf8', mode: 0o755 })
+  }
 }
 
 export async function generateRedisConf(
@@ -143,7 +176,12 @@ export async function redisStop(binDir: string, port: number): Promise<void> {
   const cliExe =
     process.platform === 'win32' ? join(binDir, 'redis-cli.exe') : join(binDir, 'redis-cli')
 
-  await run(cliExe, ['-p', port.toString(), 'SHUTDOWN', 'SAVE'])
+  try {
+    await run(cliExe, ['-p', port.toString(), 'SHUTDOWN', 'SAVE'])
+  } catch (error) {
+    // Redis 可能已经停止，忽略错误
+    console.log('Redis stop command failed (may already be stopped):', error)
+  }
 }
 
 function run(cmd: string, args: string[]): Promise<void> {
