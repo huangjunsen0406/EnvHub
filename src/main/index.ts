@@ -1,7 +1,7 @@
 import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
 import { homedir } from 'os'
 import { join } from 'path'
-import { mkdirSync } from 'fs'
+import { mkdirSync, existsSync, unlinkSync } from 'fs'
 import { detectPlatform } from './envhub/platform'
 import { toolchainRoot, envhubRoot } from './envhub/paths'
 import { installNode } from './envhub/installers/node'
@@ -16,7 +16,7 @@ import {
 import { installRedis, redisStart, redisStop } from './envhub/installers/redis'
 import { logInfo } from './envhub/log'
 import { enableAutostartMac, enableAutostartWindows } from './envhub/autostart'
-import { spawn } from 'child_process'
+import { spawn, exec } from 'child_process'
 import {
   getCurrent,
   listInstalled,
@@ -161,8 +161,8 @@ app.whenReady().then(() => {
               const dataDir = pgDataDir(major, 'main')
               logInfo(`Stopping PostgreSQL for unset: ${dataDir}`)
               await pgStop(binDir, dataDir)
-            } catch (e: any) {
-              logInfo(`Stop on unset skipped/failed: ${e?.message || e}`)
+            } catch (e: unknown) {
+              logInfo(`Stop on unset skipped/failed: ${e instanceof Error ? e.message : String(e)}`)
             }
           }
           updateShimsForTool('pg', '', dp)
@@ -179,8 +179,8 @@ app.whenReady().then(() => {
             const dataOld = pgDataDir(majorOld, 'main')
             logInfo(`Stopping previous PostgreSQL: ${dataOld}`)
             await pgStop(binOld, dataOld)
-          } catch (e: any) {
-            logInfo(`Stop previous failed: ${e?.message || e}`)
+          } catch (e: unknown) {
+            logInfo(`Stop previous failed: ${e instanceof Error ? e.message : String(e)}`)
           }
         }
 
@@ -200,8 +200,8 @@ app.whenReady().then(() => {
             logInfo(`Starting PostgreSQL for current version at ${dataDir}`)
             await pgStart(binDir, dataDir, logPath)
           }
-        } catch (e: any) {
-          logInfo(`Start current failed: ${e?.message || e}`)
+        } catch (e: unknown) {
+          logInfo(`Start current failed: ${e instanceof Error ? e.message : String(e)}`)
         }
 
         return { ok: true, current: getCurrent().current }
@@ -221,8 +221,8 @@ app.whenReady().then(() => {
               logInfo(`Stopping Redis for unset (port ${defaultPort})`)
               const { redisStop } = await import('./envhub/redis-manager')
               await redisStop(binDir, defaultPort)
-            } catch (e: any) {
-              logInfo(`Stop on unset skipped/failed: ${e?.message || e}`)
+            } catch (e: unknown) {
+              logInfo(`Stop on unset skipped/failed: ${e instanceof Error ? e.message : String(e)}`)
             }
           }
           updateShimsForTool('redis', '', dp)
@@ -237,8 +237,8 @@ app.whenReady().then(() => {
             logInfo(`Stopping previous Redis (port ${defaultPort})`)
             const { redisStop } = await import('./envhub/redis-manager')
             await redisStop(binOld, defaultPort)
-          } catch (e: any) {
-            logInfo(`Stop previous failed: ${e?.message || e}`)
+          } catch (e: unknown) {
+            logInfo(`Stop previous failed: ${e instanceof Error ? e.message : String(e)}`)
           }
         }
 
@@ -252,14 +252,21 @@ app.whenReady().then(() => {
           const running = await isRedisRunning(defaultPort)
           if (!running) {
             logInfo(`Starting Redis for current version (port ${defaultPort})`)
-            const major = args.version.split('.')[0]
             const { redisDataDir } = await import('./envhub/paths')
-            const dataDir = redisDataDir(major, 'main')
+            const { generateRedisConf } = await import('./envhub/installers/redis')
+            const dataDir = redisDataDir(args.version, 'main')
             const confPath = join(dataDir, 'redis.conf')
+
+            // Generate config if it doesn't exist
+            if (!existsSync(confPath)) {
+              logInfo(`Generating Redis config for ${args.version}`)
+              await generateRedisConf(args.version, 'main', defaultPort)
+            }
+
             await redisStart(binDir, confPath)
           }
-        } catch (e: any) {
-          logInfo(`Start current failed: ${e?.message || e}`)
+        } catch (e: unknown) {
+          logInfo(`Start current failed: ${e instanceof Error ? e.message : String(e)}`)
         }
 
         return { ok: true, current: getCurrent().current }
@@ -279,7 +286,7 @@ app.whenReady().then(() => {
       uninstallTool(args.tool, args.version, dp)
       const cur = getCurrent().current || {}
       if (cur[args.tool] === args.version) {
-        delete (cur as any)[args.tool]
+        delete (cur as Record<string, unknown>)[args.tool]
         setCurrent(args.tool, '')
       }
       return { ok: true }
@@ -484,25 +491,22 @@ app.whenReady().then(() => {
   )
 
   // 选择备份保存路径
-  ipcMain.handle(
-    'envhub:pg:selectBackupPath',
-    async (_evt, args: { dbName: string }) => {
-      const result = await dialog.showSaveDialog({
-        title: '选择备份保存位置',
-        defaultPath: `${args.dbName}-${new Date().toISOString().split('T')[0]}.sql`,
-        filters: [
-          { name: 'SQL 备份文件', extensions: ['sql'] },
-          { name: '所有文件', extensions: ['*'] }
-        ]
-      })
+  ipcMain.handle('envhub:pg:selectBackupPath', async (_evt, args: { dbName: string }) => {
+    const result = await dialog.showSaveDialog({
+      title: '选择备份保存位置',
+      defaultPath: `${args.dbName}-${new Date().toISOString().split('T')[0]}.sql`,
+      filters: [
+        { name: 'SQL 备份文件', extensions: ['sql'] },
+        { name: '所有文件', extensions: ['*'] }
+      ]
+    })
 
-      if (result.canceled || !result.filePath) {
-        return { canceled: true }
-      }
-
-      return { canceled: false, filePath: result.filePath }
+    if (result.canceled || !result.filePath) {
+      return { canceled: true }
     }
-  )
+
+    return { canceled: false, filePath: result.filePath }
+  })
 
   // 选择恢复文件
   ipcMain.handle('envhub:pg:selectRestoreFile', async () => {
@@ -528,12 +532,19 @@ app.whenReady().then(() => {
     'envhub:pg:backup',
     async (
       evt,
-      args: { pgVersion: string; dbName: string; username: string; password: string; filePath: string }
+      args: {
+        pgVersion: string
+        dbName: string
+        username: string
+        password: string
+        filePath: string
+      }
     ) => {
       const dp = detectPlatform()
       const pgBase = toolchainRoot('pg', args.pgVersion, dp)
       const binDir = join(pgBase, 'pgsql', 'bin')
-      const pgDump = process.platform === 'win32' ? join(binDir, 'pg_dump.exe') : join(binDir, 'pg_dump')
+      const pgDump =
+        process.platform === 'win32' ? join(binDir, 'pg_dump.exe') : join(binDir, 'pg_dump')
 
       logInfo(`Backing up database ${args.dbName} to ${args.filePath}`)
 
@@ -542,22 +553,24 @@ app.whenReady().then(() => {
         const child = spawn(
           pgDump,
           [
-            '-d', args.dbName,
-            '-U', args.username,
-            '-h', 'localhost',
+            '-d',
+            args.dbName,
+            '-U',
+            args.username,
+            '-h',
+            'localhost',
             '--no-owner',
             '--no-privileges',
-            '-f', args.filePath
+            '-f',
+            args.filePath
           ],
           { env }
         )
 
-        let output = ''
         let errorOutput = ''
 
         child.stdout?.on('data', (data) => {
           const message = data.toString()
-          output += message
           evt.sender.send('envhub:pg:backup:log', message)
         })
 
@@ -611,22 +624,25 @@ app.whenReady().then(() => {
         const child = spawn(
           psql,
           [
-            '-d', args.dbName,
-            '-U', args.username,
-            '-h', 'localhost',
-            '-f', args.filePath,
+            '-d',
+            args.dbName,
+            '-U',
+            args.username,
+            '-h',
+            'localhost',
+            '-f',
+            args.filePath,
             '--single-transaction',
-            '--set', 'ON_ERROR_STOP=on'
+            '--set',
+            'ON_ERROR_STOP=on'
           ],
           { env }
         )
 
-        let output = ''
         let errorOutput = ''
 
         child.stdout?.on('data', (data) => {
           const message = data.toString()
-          output += message
           evt.sender.send('envhub:pg:restore:log', message)
         })
 
@@ -766,7 +782,7 @@ app.whenReady().then(() => {
         } else if (args.tool === 'java') {
           versions = await fetchJavaVersions(
             dp,
-            (args.distribution as any) || 'temurin',
+            (args.distribution as 'temurin' | 'oracle' | 'corretto' | 'graalvm' | 'zulu' | 'liberica' | 'microsoft') || 'temurin',
             forceRefresh
           )
         } else if (args.tool === 'redis') {
@@ -775,8 +791,9 @@ app.whenReady().then(() => {
 
         logInfo(`Found ${versions?.length || 0} ${args.tool} versions`)
         return versions
-      } catch (error: any) {
-        logInfo(`Failed to fetch versions: ${error.message}`)
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error)
+        logInfo(`Failed to fetch versions: ${message}`)
         throw error
       }
     }
@@ -872,8 +889,9 @@ app.whenReady().then(() => {
         }
 
         return { ok: true, savePath }
-      } catch (error: any) {
-        logInfo(`Download failed: ${error.message}`)
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error)
+        logInfo(`Download failed: ${message}`)
         throw error
       }
     }
@@ -888,8 +906,7 @@ app.whenReady().then(() => {
 
   ipcMain.handle('envhub:python:deleteInstaller', async (_evt, args: { path: string }) => {
     logInfo(`Deleting Python installer: ${args.path}`)
-    const fs = require('fs') as typeof import('fs')
-    fs.unlinkSync(args.path)
+    unlinkSync(args.path)
     return { ok: true }
   })
 
@@ -1110,7 +1127,6 @@ app.whenReady().then(() => {
 
       if (platform.os === 'mac') {
         // macOS: 使用 AppleScript 打开新的 Terminal 窗口
-        const { exec } = require('child_process')
         const script = `tell application "Terminal"
         activate
         do script "cd ~ && '${cliExe}' -p ${port}"
@@ -1118,14 +1134,12 @@ app.whenReady().then(() => {
         exec(`osascript -e '${script}'`)
       } else if (platform.os === 'win') {
         // Windows: 使用 cmd 打开新窗口
-        const { spawn } = require('child_process')
         spawn('cmd.exe', ['/c', 'start', 'cmd.exe', '/k', `"${cliExe}" -p ${port}`], {
           detached: true,
           stdio: 'ignore'
         })
       } else {
         // Linux: 尝试使用常见的终端模拟器
-        const { spawn } = require('child_process')
         try {
           spawn('x-terminal-emulator', ['-e', `${cliExe} -p ${port}`], {
             detached: true,

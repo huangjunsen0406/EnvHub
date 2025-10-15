@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from 'fs'
+import { readdirSync, existsSync, rmSync, renameSync, mkdirSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { execSync } from 'child_process'
 import { DetectedPlatform } from '../platform'
@@ -26,22 +26,21 @@ export async function installRedis(opts: RedisInstallOptions): Promise<{
   await extractArchive(opts.archivePath, baseDir)
 
   // 2. 处理 Redis Stack 嵌套目录
-  const fs = require('fs') as typeof import('fs')
-  const entries = fs.readdirSync(baseDir)
+  const entries = readdirSync(baseDir)
   const stackDir = entries.find((e) => e.startsWith('redis-stack-server'))
 
   if (stackDir) {
     const extractedPath = join(baseDir, stackDir)
-    const files = fs.readdirSync(extractedPath)
+    const files = readdirSync(extractedPath)
     for (const file of files) {
       const src = join(extractedPath, file)
       const dest = join(baseDir, file)
-      if (fs.existsSync(dest)) {
-        fs.rmSync(dest, { recursive: true, force: true })
+      if (existsSync(dest)) {
+        rmSync(dest, { recursive: true, force: true })
       }
-      fs.renameSync(src, dest)
+      renameSync(src, dest)
     }
-    fs.rmSync(extractedPath, { recursive: true, force: true })
+    rmSync(extractedPath, { recursive: true, force: true })
   }
 
   // 3. macOS 权限处理
@@ -77,10 +76,13 @@ export async function installRedis(opts: RedisInstallOptions): Promise<{
   return { binDir, confPath }
 }
 
-async function generateRedisConf(version: string, cluster: string, port: number): Promise<string> {
-  const majorVersion = version.split('.')[0]
-  const dataDir = redisDataDir(majorVersion, cluster)
-  const logDir = redisLogDir(majorVersion, cluster)
+export async function generateRedisConf(
+  version: string,
+  cluster: string,
+  port: number
+): Promise<string> {
+  const dataDir = redisDataDir(version, cluster)
+  const logDir = redisLogDir(version, cluster)
 
   mkdirSync(dataDir, { recursive: true })
   mkdirSync(logDir, { recursive: true })
@@ -118,7 +120,7 @@ export async function redisStart(binDir: string, confPath: string): Promise<void
 
   // Redis 是守护进程，需要在后台启动
   // 跨平台处理：Windows、macOS、Linux
-  const spawnOptions: any = {
+  const spawnOptions: Record<string, unknown> = {
     detached: true,
     stdio: 'ignore'
   }

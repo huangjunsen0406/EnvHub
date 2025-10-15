@@ -35,10 +35,10 @@ export function bundlesManifestPath(bundleDir: string): string {
   return join(bundleDir, 'manifest.json')
 }
 
-export function redisDataDir(majorVersion: string, cluster: string): string {
-  return join(envhubRoot(), 'data', 'redis', majorVersion, cluster)
+export function redisDataDir(version: string, cluster: string): string {
+  return join(envhubRoot(), 'data', 'redis', version, cluster)
 }
 
-export function redisLogDir(majorVersion: string, cluster: string): string {
-  return join(envhubRoot(), 'logs', 'redis', majorVersion, cluster)
+export function redisLogDir(version: string, cluster: string): string {
+  return join(envhubRoot(), 'logs', 'redis', version, cluster)
 }

@@ -93,12 +93,17 @@ async function openRedisTerminal(version: string): Promise<void> {
           <a-tag v-if="isInstalled(record.version)" color="green">已安装</a-tag>
           <a-tag v-else color="gray">未安装</a-tag>
           <a-tag v-if="isCurrent(record.version)" color="blue">当前版本</a-tag>
-          <a-tag v-if="redisStatus[record.version]?.running" color="arcoblue">
+          <a-tag
+            v-if="isCurrent(record.version) && redisStatus[record.version]?.running"
+            color="arcoblue"
+          >
             运行中 PID:{{ redisStatus[record.version].pid }} 端口:{{
               redisStatus[record.version].port
             }}
           </a-tag>
-          <a-tag v-else-if="isInstalled(record.version)" color="gray">已停止</a-tag>
+          <a-tag v-else-if="isCurrent(record.version) && isInstalled(record.version)" color="gray"
+            >已停止</a-tag
+          >
           <a-tag v-if="record.date" color="arcoblue">
             {{ new Date(record.date).toLocaleDateString() }}
           </a-tag>
@@ -164,7 +169,7 @@ async function openRedisTerminal(version: string): Promise<void> {
             </a-button>
           </a-popconfirm>
           <a-button
-            v-if="isInstalled(record.version)"
+            v-if="isInstalled(record.version) && isCurrent(record.version)"
             type="text"
             size="small"
             @click="checkRedisStatus(record.version)"
