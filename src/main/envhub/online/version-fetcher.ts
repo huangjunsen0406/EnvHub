@@ -21,6 +21,7 @@ interface VersionCache {
   node?: CacheEntry
   pg?: CacheEntry
   java?: CacheEntry
+  redis?: CacheEntry
 }
 
 // 缓存有效期：24 小时（毫秒）
@@ -65,7 +66,9 @@ function writeCache(cache: VersionCache): void {
 /**
  * 获取指定工具的缓存（如果有效）
  */
-function getCachedVersions(tool: 'python' | 'node' | 'pg' | 'java'): OnlineVersion[] | null {
+function getCachedVersions(
+  tool: 'python' | 'node' | 'pg' | 'java' | 'redis'
+): OnlineVersion[] | null {
   const cache = readCache()
   const entry = cache[tool]
 
@@ -87,7 +90,7 @@ function getCachedVersions(tool: 'python' | 'node' | 'pg' | 'java'): OnlineVersi
  * 保存版本列表到缓存
  */
 function setCachedVersions(
-  tool: 'python' | 'node' | 'pg' | 'java',
+  tool: 'python' | 'node' | 'pg' | 'java' | 'redis',
   versions: OnlineVersion[]
 ): void {
   const cache = readCache()
@@ -627,4 +630,74 @@ async function fetchJSON(url: string): Promise<any> {
       reject(err)
     })
   })
+}
+
+/**
+ * 获取 Redis 在线版本列表
+ * macOS/Linux 使用 Redis Stack，Windows 使用 tporadowski/redis
+ */
+export async function fetchRedisVersions(
+  platform: DetectedPlatform,
+  forceRefresh = false
+): Promise<OnlineVersion[]> {
+  // 检查缓存
+  if (!forceRefresh) {
+    const cached = getCachedVersions('redis')
+    if (cached) return cached
+  }
+
+  try {
+    const versions: OnlineVersion[] = []
+
+    // Windows: 使用 tporadowski/redis 5.0.14.1
+    if (platform.platformKey === 'win-x64') {
+      versions.push({
+        version: '5.0.14.1',
+        url: 'https://github.com/tporadowski/redis/releases/download/v5.0.14.1/Redis-x64-5.0.14.1.zip',
+        date: '2022-12-17'
+      })
+    } else {
+      // macOS/Linux: 使用 Redis Stack
+      const stackVersions = [
+        { version: '7.4.0', build: 'v7', date: '2024-10-03' },
+        { version: '7.2.0', build: 'v19', date: '2024-10-03' },
+        { version: '7.2.0', build: 'v18', date: '2024-07-07' }
+      ]
+
+      for (const { version, build, date } of stackVersions) {
+        const url = buildRedisStackUrl(version, build, platform)
+        if (url) {
+          versions.push({ version, url, date })
+        }
+      }
+    }
+
+    // 保存到缓存
+    setCachedVersions('redis', versions)
+
+    return versions
+  } catch (error) {
+    console.error('Failed to fetch Redis versions:', error)
+    return []
+  }
+}
+
+/**
+ * 构建 Redis Stack 下载链接
+ */
+function buildRedisStackUrl(version: string, build: string, platform: DetectedPlatform): string {
+  const baseUrl = 'https://packages.redis.io/redis-stack'
+
+  let filename: string
+  if (platform.platformKey === 'darwin-arm64') {
+    filename = `redis-stack-server-${version}-${build}.sonoma.arm64.zip`
+  } else if (platform.platformKey === 'darwin-x64') {
+    filename = `redis-stack-server-${version}-${build}.ventura.x86_64.zip`
+  } else if (platform.platformKey.startsWith('linux')) {
+    filename = `redis-stack-server-${version}-${build}.jammy.x86_64.tar.gz`
+  } else {
+    return ''
+  }
+
+  return `${baseUrl}/${filename}`
 }

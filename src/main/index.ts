@@ -1,7 +1,9 @@
 import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { homedir } from 'os'
+import { join } from 'path'
+import { mkdirSync } from 'fs'
 import { detectPlatform } from './envhub/platform'
-import { toolchainRoot } from './envhub/paths'
+import { toolchainRoot, envhubRoot } from './envhub/paths'
 import { installNode } from './envhub/installers/node'
 import { installJava } from './envhub/installers/java'
 import {
@@ -11,6 +13,7 @@ import {
   createUser,
   createDatabase
 } from './envhub/installers/pg'
+import { installRedis, redisStart, redisStop } from './envhub/installers/redis'
 import { logInfo } from './envhub/log'
 import { enableAutostartMac, enableAutostartWindows } from './envhub/autostart'
 import { spawn } from 'child_process'
@@ -23,11 +26,13 @@ import {
 } from './envhub/state'
 import { isPathConfigured, addToPath, removeFromPath } from './envhub/path-manager'
 import { isPgRunning, pgStop, getPgStatus } from './envhub/pg-manager'
+import { isRedisRunning, getRedisStatus } from './envhub/redis-manager'
 import {
   fetchPythonVersions,
   fetchNodeVersions,
   fetchPostgresVersions,
-  fetchJavaVersions
+  fetchJavaVersions,
+  fetchRedisVersions
 } from './envhub/online/version-fetcher'
 import {
   downloadFile,
@@ -36,7 +41,6 @@ import {
   formatTime,
   scanDownloadedInstallers
 } from './envhub/online/downloader'
-import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 
@@ -125,13 +129,14 @@ app.whenReady().then(() => {
       python: listInstalled('python', dp),
       node: listInstalled('node', dp),
       pg: listInstalled('pg', dp),
-      java: listInstalled('java', dp)
+      java: listInstalled('java', dp),
+      redis: listInstalled('redis', dp)
     }
   })
 
   ipcMain.handle(
     'envhub:use',
-    async (_evt, args: { tool: 'python' | 'node' | 'pg' | 'java'; version: string }) => {
+    async (_evt, args: { tool: 'python' | 'node' | 'pg' | 'java' | 'redis'; version: string }) => {
       const dp = detectPlatform()
       logInfo(`Use ${args.tool}@${args.version || '(unset)'}`)
 
@@ -196,6 +201,64 @@ app.whenReady().then(() => {
         return { ok: true, current: getCurrent().current }
       }
 
+      // Special handling for Redis: start when set, stop when unset
+      if (args.tool === 'redis') {
+        const cur = getCurrent().current?.redis
+        const defaultPort = 6379
+
+        // If unsetting current, stop existing instance first
+        if (!args.version) {
+          if (cur) {
+            try {
+              const base = toolchainRoot('redis', cur, dp)
+              const binDir = join(base, dp.platformKey === 'win-x64' ? '' : 'bin')
+              logInfo(`Stopping Redis for unset (port ${defaultPort})`)
+              const { redisStop } = await import('./envhub/redis-manager')
+              await redisStop(binDir, defaultPort)
+            } catch (e: any) {
+              logInfo(`Stop on unset skipped/failed: ${e?.message || e}`)
+            }
+          }
+          updateShimsForTool('redis', '', dp)
+          return { ok: true, current: getCurrent().current }
+        }
+
+        // Switching/setting current: ensure previous instance stopped (to avoid port conflict)
+        if (cur && cur !== args.version) {
+          try {
+            const baseOld = toolchainRoot('redis', cur, dp)
+            const binOld = join(baseOld, dp.platformKey === 'win-x64' ? '' : 'bin')
+            logInfo(`Stopping previous Redis (port ${defaultPort})`)
+            const { redisStop } = await import('./envhub/redis-manager')
+            await redisStop(binOld, defaultPort)
+          } catch (e: any) {
+            logInfo(`Stop previous failed: ${e?.message || e}`)
+          }
+        }
+
+        // Write shims for the new version
+        updateShimsForTool('redis', args.version, dp)
+
+        // Ensure Redis is running for the selected version
+        try {
+          const base = toolchainRoot('redis', args.version, dp)
+          const binDir = join(base, dp.platformKey === 'win-x64' ? '' : 'bin')
+          const running = await isRedisRunning(defaultPort)
+          if (!running) {
+            logInfo(`Starting Redis for current version (port ${defaultPort})`)
+            const major = args.version.split('.')[0]
+            const { redisDataDir } = await import('./envhub/paths')
+            const dataDir = redisDataDir(major, 'main')
+            const confPath = join(dataDir, 'redis.conf')
+            await redisStart(binDir, confPath)
+          }
+        } catch (e: any) {
+          logInfo(`Start current failed: ${e?.message || e}`)
+        }
+
+        return { ok: true, current: getCurrent().current }
+      }
+
       // Default behavior for other tools
       updateShimsForTool(args.tool, args.version, dp)
       return { ok: true, current: getCurrent().current }
@@ -204,7 +267,7 @@ app.whenReady().then(() => {
 
   ipcMain.handle(
     'envhub:uninstall',
-    (_evt, args: { tool: 'python' | 'node' | 'pg' | 'java'; version: string }) => {
+    (_evt, args: { tool: 'python' | 'node' | 'pg' | 'java' | 'redis'; version: string }) => {
       const dp = detectPlatform()
       logInfo(`Uninstall ${args.tool}@${args.version}`)
       uninstallTool(args.tool, args.version, dp)
@@ -348,7 +411,7 @@ app.whenReady().then(() => {
     async (
       _evt,
       args: {
-        tool: 'python' | 'node' | 'pg' | 'java'
+        tool: 'python' | 'node' | 'pg' | 'java' | 'redis'
         forceRefresh?: boolean
         distribution?: string
       }
@@ -371,6 +434,8 @@ app.whenReady().then(() => {
             (args.distribution as any) || 'temurin',
             forceRefresh
           )
+        } else if (args.tool === 'redis') {
+          versions = await fetchRedisVersions(dp, forceRefresh)
         }
 
         logInfo(`Found ${versions?.length || 0} ${args.tool} versions`)
@@ -387,7 +452,7 @@ app.whenReady().then(() => {
     'envhub:online:install',
     async (
       evt,
-      args: { tool: 'python' | 'node' | 'pg' | 'java'; version: string; url: string }
+      args: { tool: 'python' | 'node' | 'pg' | 'java' | 'redis'; version: string; url: string }
     ) => {
       const dp = detectPlatform()
       const { tool, version, url } = args
@@ -453,9 +518,15 @@ app.whenReady().then(() => {
             platform: dp,
             archivePath: savePath
           })
+        } else if (tool === 'redis') {
+          await installRedis({
+            version,
+            platform: dp.platformKey,
+            archivePath: savePath
+          })
         }
 
-        // Python 安装后不自动激活，Node/PostgreSQL/Java 自动激活
+        // Python 安装后不自动激活，其他工具自动激活
         if (tool !== 'python') {
           logInfo(`Setting ${tool} ${version} as current version`)
           setCurrent(tool, version)
@@ -504,6 +575,238 @@ app.whenReady().then(() => {
       : args.dataDir
     return await getPgStatus(binDir, dataDir)
   })
+
+  // Redis 状态管理
+  ipcMain.handle(
+    'envhub:redis:status',
+    async (_evt, args: { redisVersion: string; port?: number }) => {
+      const port = args.port || 6379
+      logInfo(`Checking Redis status on port ${port}`)
+      return await getRedisStatus(port)
+    }
+  )
+
+  // Redis 在线版本获取
+  ipcMain.handle('envhub:redis:fetchVersions', async (_evt, forceRefresh = false) => {
+    const platform = detectPlatform()
+    logInfo(`Fetching Redis versions for ${platform.platformKey}`)
+    return await fetchRedisVersions(platform, forceRefresh)
+  })
+
+  // Redis 下载并安装
+  ipcMain.handle(
+    'envhub:redis:install',
+    async (_evt, args: { version: string; cluster?: string; port?: number }) => {
+      const platform = detectPlatform()
+      logInfo(`Installing Redis ${args.version} on ${platform.platformKey}`)
+
+      // 1. 获取下载 URL
+      const versions = await fetchRedisVersions(platform)
+      const versionInfo = versions.find((v) => v.version === args.version)
+      if (!versionInfo) {
+        throw new Error(`Redis ${args.version} not found`)
+      }
+
+      // 2. 下载到缓存
+      const ext = versionInfo.url.endsWith('.zip') ? '.zip' : '.tar.gz'
+      const savePath = join(cacheDir(), `redis-${args.version}-${platform.platformKey}${ext}`)
+
+      await downloadFile({
+        url: versionInfo.url,
+        savePath,
+        onProgress: (progress) => {
+          // 发送下载进度到渲染进程
+          BrowserWindow.getAllWindows()[0]?.webContents.send('download-progress', {
+            tool: 'redis',
+            version: args.version,
+            ...progress
+          })
+        }
+      })
+
+      // 3. 安装
+      const result = await installRedis({
+        version: args.version,
+        platform: platform.platformKey,
+        archivePath: savePath,
+        cluster: args.cluster,
+        port: args.port
+      })
+
+      logInfo(`Redis ${args.version} installed successfully`)
+      return result
+    }
+  )
+
+  // Redis 卸载
+  ipcMain.handle('envhub:redis:uninstall', async (_evt, version: string) => {
+    const platform = detectPlatform()
+    logInfo(`Uninstalling Redis ${version}`)
+    await uninstallTool('redis', version, platform)
+    return { ok: true }
+  })
+
+  // Redis 设置为当前版本
+  ipcMain.handle('envhub:redis:setCurrent', async (_evt, version: string) => {
+    const platform = detectPlatform()
+    logInfo(`Setting Redis ${version} as current`)
+    await setCurrent('redis', version)
+    await updateShimsForTool('redis', version, platform)
+    return { ok: true }
+  })
+
+  // Redis 启动
+  ipcMain.handle(
+    'envhub:redis:start',
+    async (_evt, args: { version: string; confPath: string }) => {
+      const platform = detectPlatform()
+      const binDir = join(
+        toolchainRoot('redis', args.version, platform),
+        platform.platformKey === 'win-x64' ? '' : 'bin'
+      )
+      logInfo(`Starting Redis ${args.version}`)
+      await redisStart(binDir, args.confPath)
+      return { ok: true }
+    }
+  )
+
+  // Redis 停止
+  ipcMain.handle('envhub:redis:stop', async (_evt, args: { version: string; port: number }) => {
+    const platform = detectPlatform()
+    const binDir = join(
+      toolchainRoot('redis', args.version, platform),
+      platform.platformKey === 'win-x64' ? '' : 'bin'
+    )
+    logInfo(`Stopping Redis ${args.version} on port ${args.port}`)
+    await redisStop(binDir, args.port)
+    return { ok: true }
+  })
+
+  // Redis 自启动配置
+  ipcMain.handle(
+    'envhub:redis:enableAutostart',
+    async (
+      _evt,
+      args: {
+        redisVersion: string
+        cluster: string
+        confPath: string
+        binDir: string
+        port?: number
+      }
+    ) => {
+      const dp = detectPlatform()
+      const name = `envhub-redis-${args.redisVersion.split('.')[0]}-${args.cluster}`
+      const logDir = join(
+        envhubRoot(),
+        'logs',
+        'redis',
+        args.redisVersion.split('.')[0],
+        args.cluster
+      )
+      mkdirSync(logDir, { recursive: true })
+      const logPath = process.platform === 'win32' ? `${logDir}\\redis.log` : `${logDir}/redis.log`
+
+      if (dp.os === 'mac') {
+        const plistPath = enableAutostartMac({
+          name,
+          exec: `${args.binDir}/redis-server`,
+          args: [args.confPath],
+          logFile: logPath
+        })
+        logInfo(`LaunchAgent plist created at ${plistPath}`)
+        // load
+        await new Promise<void>((resolve, reject) => {
+          const p = spawn('launchctl', ['load', '-w', plistPath], { stdio: 'inherit' })
+          p.on('error', reject)
+          p.on('exit', (c) => (c === 0 ? resolve() : reject(new Error('launchctl load failed'))))
+        })
+        logInfo('Redis autostart enabled (macOS)')
+        return { ok: true, plistPath }
+      } else {
+        const cmd = enableAutostartWindows({
+          name,
+          exec: `${args.binDir}\\redis-server.exe`,
+          args: [args.confPath]
+        })
+        // run schtasks
+        await new Promise<void>((resolve, reject) => {
+          const p = spawn(
+            'schtasks',
+            [
+              '/Create',
+              '/SC',
+              'ONLOGON',
+              '/TN',
+              name,
+              '/TR',
+              `"${args.binDir}\\redis-server.exe" "${args.confPath}"`,
+              '/RL',
+              'HIGHEST',
+              '/F'
+            ],
+            { stdio: 'inherit' }
+          )
+          p.on('error', reject)
+          p.on('exit', (c) => (c === 0 ? resolve() : reject(new Error('schtasks /Create failed'))))
+        })
+        logInfo(`Redis autostart enabled (Windows): ${cmd}`)
+        return { ok: true, cmd }
+      }
+    }
+  )
+
+  // Redis 打开终端
+  ipcMain.handle(
+    'envhub:redis:openTerminal',
+    async (_evt, args: { version: string; port?: number }) => {
+      const platform = detectPlatform()
+      const port = args.port || 6379
+      const binDir = join(
+        toolchainRoot('redis', args.version, platform),
+        platform.platformKey === 'win-x64' ? '' : 'bin'
+      )
+      const cliExe =
+        platform.platformKey === 'win-x64'
+          ? join(binDir, 'redis-cli.exe')
+          : join(binDir, 'redis-cli')
+
+      logInfo(`Opening Redis CLI for version ${args.version} on port ${port}`)
+
+      if (platform.os === 'mac') {
+        // macOS: 使用 AppleScript 打开新的 Terminal 窗口
+        const { exec } = require('child_process')
+        const script = `tell application "Terminal"
+        activate
+        do script "cd ~ && '${cliExe}' -p ${port}"
+      end tell`
+        exec(`osascript -e '${script}'`)
+      } else if (platform.os === 'win') {
+        // Windows: 使用 cmd 打开新窗口
+        const { spawn } = require('child_process')
+        spawn('cmd.exe', ['/c', 'start', 'cmd.exe', '/k', `"${cliExe}" -p ${port}`], {
+          detached: true,
+          stdio: 'ignore'
+        })
+      } else {
+        // Linux: 尝试使用常见的终端模拟器
+        const { spawn } = require('child_process')
+        try {
+          spawn('x-terminal-emulator', ['-e', `${cliExe} -p ${port}`], {
+            detached: true,
+            stdio: 'ignore'
+          })
+        } catch {
+          spawn('xterm', ['-e', `${cliExe} -p ${port}`], {
+            detached: true,
+            stdio: 'ignore'
+          })
+        }
+      }
+
+      return { ok: true }
+    }
+  )
 
   createWindow()
 

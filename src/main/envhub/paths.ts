@@ -15,11 +15,12 @@ export function shimsDir(): string {
 }
 
 export function toolchainRoot(
-  tool: 'python' | 'node' | 'pg' | 'java',
+  tool: 'python' | 'node' | 'pg' | 'java' | 'redis',
   version: string,
-  dp: DetectedPlatform
+  dp: DetectedPlatform | string
 ): string {
-  return join(envhubRoot(), 'toolchains', tool, version, dp.platformKey)
+  const platformKey = typeof dp === 'string' ? dp : dp.platformKey
+  return join(envhubRoot(), 'toolchains', tool, version, platformKey)
 }
 
 export function pgDataDir(pgVersion: string, cluster: string): string {
@@ -32,4 +33,12 @@ export function logsDir(): string {
 
 export function bundlesManifestPath(bundleDir: string): string {
   return join(bundleDir, 'manifest.json')
+}
+
+export function redisDataDir(majorVersion: string, cluster: string): string {
+  return join(envhubRoot(), 'data', 'redis', majorVersion, cluster)
+}
+
+export function redisLogDir(majorVersion: string, cluster: string): string {
+  return join(envhubRoot(), 'logs', 'redis', majorVersion, cluster)
 }

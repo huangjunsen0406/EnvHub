@@ -2,7 +2,7 @@ import { ref, computed } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import { useToolsStore } from '../../../store/tools'
 
-export type Tool = 'python' | 'node' | 'pg' | 'java'
+export type Tool = 'python' | 'node' | 'pg' | 'java' | 'redis'
 
 export interface InstallProgress {
   visible: boolean
@@ -68,9 +68,11 @@ export function useToolVersion(tool: Tool) {
   }
 
   function hideInstallProgress(): void {
-    setTimeout(() => {
-      installProgress.value.visible = false
-    }, 2000)
+    installProgress.value.visible = false
+  }
+
+  function closeInstallProgress(): void {
+    installProgress.value.visible = false
   }
 
   async function fetchVersions(forceRefresh = false, silent = false): Promise<void> {
@@ -163,7 +165,10 @@ export function useToolVersion(tool: Tool) {
         updateInstallProgress('下载并安装完成！', 'success')
         Message.success(`${tool} ${version} 安装完成`)
         await toolsStore.refreshInstalled()
-        hideInstallProgress()
+        // 2 秒后自动关闭
+        setTimeout(() => {
+          hideInstallProgress()
+        }, 2000)
       } finally {
         window.electron.ipcRenderer.removeAllListeners('envhub:download:progress')
       }
@@ -190,6 +195,7 @@ export function useToolVersion(tool: Tool) {
     useVersion,
     unsetCurrent,
     uninstall,
-    installOnline
+    installOnline,
+    closeInstallProgress
   }
 }

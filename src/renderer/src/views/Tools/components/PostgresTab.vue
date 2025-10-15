@@ -2,10 +2,12 @@
 import { ref, reactive } from 'vue'
 import { IconDelete, IconCloudDownload, IconRefresh } from '@arco-design/web-vue/es/icon'
 import { useToolVersion } from '../composables/useToolVersion'
+import InstallProgressModal from './InstallProgressModal.vue'
 
 const {
   fetchingVersions,
   installingVersions,
+  installProgress,
   onlineVersions,
   isInstalled,
   isCurrent,
@@ -13,7 +15,8 @@ const {
   useVersion,
   unsetCurrent,
   uninstall,
-  installOnline
+  installOnline,
+  closeInstallProgress
 } = useToolVersion('pg')
 
 const columns = [
@@ -145,5 +148,7 @@ async function unsetPgCurrent(): Promise<void> {
         </a-space>
       </template>
     </a-table>
+
+    <InstallProgressModal :progress="installProgress" @close="closeInstallProgress" />
   </div>
 </template>

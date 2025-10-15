@@ -5,8 +5,9 @@ import PythonTab from './components/PythonTab.vue'
 import NodeTab from './components/NodeTab.vue'
 import PostgresTab from './components/PostgresTab.vue'
 import JavaTab from './components/JavaTab.vue'
+import RedisTab from './components/RedisTab.vue'
 
-type Tool = 'python' | 'node' | 'pg' | 'java'
+type Tool = 'python' | 'node' | 'pg' | 'java' | 'redis'
 
 const activeTab = ref<Tool>('python')
 const toolsStore = useToolsStore()
@@ -17,7 +18,7 @@ onMounted(async () => {
     await toolsStore.refreshInstalled()
 
     // 2. 后台并行加载所有工具的在线版本
-    const tools: Tool[] = ['python', 'node', 'pg', 'java']
+    const tools: Tool[] = ['python', 'node', 'pg', 'java', 'redis']
     await Promise.all(
       tools.map((tool) =>
         !toolsStore.versionsLoaded[tool]
@@ -67,6 +68,14 @@ onMounted(async () => {
             <span style="font-size: 18px">☕</span>
           </template>
           <JavaTab />
+        </a-tab-pane>
+
+        <!-- Redis Tab -->
+        <a-tab-pane key="redis" title="Redis">
+          <template #icon>
+            <span style="font-size: 18px">🔴</span>
+          </template>
+          <RedisTab />
         </a-tab-pane>
       </a-tabs>
     </a-card>

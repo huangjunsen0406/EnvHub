@@ -51,6 +51,18 @@ export async function installPostgres(
   const logFile = join(dataDir, 'pg.log')
   await pgStart(binDir, dataDir, logFile)
 
+  // 等待 PostgreSQL 启动完成
+  await new Promise((resolve) => setTimeout(resolve, 2000))
+
+  // 创建与当前用户名同名的数据库，方便直接使用 psql 连接
+  try {
+    const username = process.env.USER || process.env.USERNAME || 'postgres'
+    await createDatabase(binDir, username, username)
+  } catch (error) {
+    // 忽略创建失败（可能已存在）
+    console.warn('Failed to create user database:', error)
+  }
+
   return { binDir, dataDir }
 }
 
@@ -65,6 +77,15 @@ export interface PgInitOptions {
 export async function initDb(pgBinDir: string, opts: PgInitOptions): Promise<string> {
   const dataDir = pgDataDir(opts.version.split('.')[0], opts.cluster)
   mkdirSync(dataDir, { recursive: true })
+
+  // 检查是否已经初始化过（存在 PG_VERSION 文件表示已初始化）
+  const { existsSync } = await import('fs')
+  const pgVersionFile = join(dataDir, 'PG_VERSION')
+  if (existsSync(pgVersionFile)) {
+    console.log(`Database cluster already initialized at ${dataDir}`)
+    return dataDir
+  }
+
   const initdb =
     process.platform === 'win32' ? join(pgBinDir, 'initdb.exe') : join(pgBinDir, 'initdb')
   const args = ['-D', dataDir]
@@ -117,10 +138,24 @@ export async function createUser(
 export async function createDatabase(
   pgBinDir: string,
   dbName: string,
-  owner: string
+  owner?: string
 ): Promise<void> {
   const psql = process.platform === 'win32' ? join(pgBinDir, 'psql.exe') : join(pgBinDir, 'psql')
-  const sql = `DO $$\nBEGIN\n  IF NOT EXISTS (SELECT 1 FROM pg_database WHERE datname='${dbName}') THEN\n    CREATE DATABASE ${dbName} OWNER ${owner};\n  END IF;\nEND$$;`
+  // 先检查数据库是否已存在，避免报错
+  const checkSql = `SELECT 1 FROM pg_database WHERE datname='${dbName}'`
+  try {
+    const result = await runWithOutput(psql, ['-d', 'postgres', '-tAc', checkSql])
+    if (result.trim()) {
+      // 数据库已存在
+      return
+    }
+  } catch {
+    // 忽略检查错误
+  }
+
+  // 创建数据库
+  const ownerClause = owner ? ` OWNER ${owner}` : ''
+  const sql = `CREATE DATABASE ${dbName}${ownerClause};`
   await run(psql, ['-d', 'postgres', '-c', sql])
 }
 
@@ -129,5 +164,17 @@ function run(cmd: string, args: string[]): Promise<void> {
     const p = spawn(cmd, args, { stdio: 'inherit' })
     p.on('error', reject)
     p.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`${cmd} exited ${code}`))))
+  })
+}
+
+function runWithOutput(cmd: string, args: string[]): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const p = spawn(cmd, args, { stdio: ['inherit', 'pipe', 'inherit'] })
+    let stdout = ''
+    p.stdout?.on('data', (data) => {
+      stdout += data.toString()
+    })
+    p.on('error', reject)
+    p.on('exit', (code) => (code === 0 ? resolve(stdout) : reject(new Error(`${cmd} exited ${code}`))))
   })
 }

@@ -8,12 +8,13 @@ interface Props {
 defineProps<Props>()
 
 const emit = defineEmits<{
-  'update:visible': [value: boolean]
+  close: []
 }>()
 
-function handleClose() {
-  emit('update:visible', false)
+function handleClose(): void {
+  emit('close')
 }
+
 </script>
 
 <template>
@@ -21,7 +22,7 @@ function handleClose() {
     :visible="progress.visible"
     :title="`安装 ${progress.tool} ${progress.version}`"
     :footer="false"
-    :closable="progress.status !== 'info'"
+    :closable="true"
     :mask-closable="false"
     width="600px"
     @cancel="handleClose"
@@ -40,6 +41,13 @@ function handleClose() {
             {{ log }}
           </div>
         </div>
+      </div>
+
+      <div
+        v-if="progress.status === 'info'"
+        class="text-xs text-gray-500 mt-2 border-t pt-3"
+      >
+        提示：关闭弹窗不会中断下载，安装将在后台继续进行
       </div>
     </div>
   </a-modal>

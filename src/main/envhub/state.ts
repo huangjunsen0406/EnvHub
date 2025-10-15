@@ -5,7 +5,7 @@ import { DetectedPlatform } from './platform'
 import { writeShims, removeShims } from './shims'
 import { execSync } from 'child_process'
 
-export type Tool = 'python' | 'node' | 'pg' | 'java'
+export type Tool = 'python' | 'node' | 'pg' | 'java' | 'redis'
 
 interface CurrentState {
   current?: Partial<Record<Tool, string>>
@@ -84,6 +84,8 @@ export function updateShimsForTool(tool: Tool, version: string, dp: DetectedPlat
       removeShims(dp, ['psql', 'pg_ctl', 'postgres'])
     } else if (tool === 'java') {
       removeShims(dp, ['java', 'javac', 'jar'])
+    } else if (tool === 'redis') {
+      removeShims(dp, ['redis-server', 'redis-cli'])
     }
     setCurrent(tool, '')
     return
@@ -126,6 +128,15 @@ export function updateShimsForTool(tool: Tool, version: string, dp: DetectedPlat
       { name: 'java', target: java },
       { name: 'javac', target: javac },
       { name: 'jar', target: jar }
+    ])
+  } else if (tool === 'redis') {
+    const isWin = process.platform === 'win32'
+    const binDir = isWin ? base : join(base, 'bin')
+    const serverExe = isWin ? join(base, 'redis-server.exe') : join(binDir, 'redis-server')
+    const cliExe = isWin ? join(base, 'redis-cli.exe') : join(binDir, 'redis-cli')
+    writeShims(dp, [
+      { name: 'redis-server', target: serverExe },
+      { name: 'redis-cli', target: cliExe }
     ])
   }
   setCurrent(tool, version)

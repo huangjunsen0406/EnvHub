@@ -20,11 +20,12 @@ export interface ShimSpec {
   args?: string[]
 }
 
-export function writeShims(dp: DetectedPlatform, specs: ShimSpec[]): void {
+export function writeShims(dp: DetectedPlatform | string, specs: ShimSpec[]): void {
+  const os = typeof dp === 'string' ? (dp.startsWith('win') ? 'win' : 'unix') : dp.os
   const dir = shimsDir()
   mkdirSync(dir, { recursive: true })
   for (const spec of specs) {
-    if (dp.os === 'win') {
+    if (os === 'win') {
       const body = winCmdShimBody(spec.target, spec.args)
       writeFileSync(join(dir, `${spec.name}.cmd`), body, 'utf8')
     } else {

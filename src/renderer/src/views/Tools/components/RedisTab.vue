@@ -1,5 +1,11 @@
 <script setup lang="ts">
-import { IconDelete, IconCloudDownload, IconRefresh } from '@arco-design/web-vue/es/icon'
+import { ref } from 'vue'
+import {
+  IconDelete,
+  IconCloudDownload,
+  IconRefresh,
+  IconCodeBlock
+} from '@arco-design/web-vue/es/icon'
 import { useToolVersion } from '../composables/useToolVersion'
 import InstallProgressModal from './InstallProgressModal.vue'
 
@@ -16,13 +22,54 @@ const {
   uninstall,
   installOnline,
   closeInstallProgress
-} = useToolVersion('java')
+} = useToolVersion('redis')
 
 const columns = [
   { title: '版本', dataIndex: 'version', width: 150 },
   { title: '状态', slotName: 'status', width: 200 },
   { title: '操作', slotName: 'actions' }
 ]
+
+const redisStatus = ref<Record<string, { running: boolean; pid?: number; port?: number }>>({})
+
+async function checkRedisStatus(v: string): Promise<void> {
+  try {
+    const status = await window.electron.ipcRenderer.invoke('envhub:redis:status', {
+      redisVersion: v
+    })
+    redisStatus.value[v] = status
+  } catch (error) {
+    console.error('Failed to check Redis status:', error)
+  }
+}
+
+// 重写 useVersion 以支持 Redis 状态检查
+async function useRedisVersion(version: string): Promise<void> {
+  await useVersion(version)
+  await checkRedisStatus(version)
+}
+
+// 重写 unsetCurrent 以支持 Redis 状态检查
+async function unsetRedisCurrent(): Promise<void> {
+  await unsetCurrent()
+  // Redis 停用后刷新所有版本状态
+  const versions = Object.keys(redisStatus.value)
+  for (const v of versions) {
+    await checkRedisStatus(v)
+  }
+}
+
+// 打开 Redis 终端
+async function openRedisTerminal(version: string): Promise<void> {
+  try {
+    await window.electron.ipcRenderer.invoke('envhub:redis:openTerminal', {
+      version,
+      port: 6379
+    })
+  } catch (error) {
+    console.error('Failed to open Redis terminal:', error)
+  }
+}
 </script>
 
 <template>
@@ -46,7 +93,12 @@ const columns = [
           <a-tag v-if="isInstalled(record.version)" color="green">已安装</a-tag>
           <a-tag v-else color="gray">未安装</a-tag>
           <a-tag v-if="isCurrent(record.version)" color="blue">当前版本</a-tag>
-          <a-tag v-if="record.lts" color="orange">LTS</a-tag>
+          <a-tag v-if="redisStatus[record.version]?.running" color="arcoblue">
+            运行中 PID:{{ redisStatus[record.version].pid }} 端口:{{
+              redisStatus[record.version].port
+            }}
+          </a-tag>
+          <a-tag v-else-if="isInstalled(record.version)" color="gray">已停止</a-tag>
           <a-tag v-if="record.date" color="arcoblue">
             {{ new Date(record.date).toLocaleDateString() }}
           </a-tag>
@@ -58,7 +110,7 @@ const columns = [
             v-if="!isInstalled(record.version)"
             type="primary"
             size="small"
-            :loading="installingVersions[`java-${record.version}`]"
+            :loading="installingVersions[`redis-${record.version}`]"
             @click="installOnline(record.version, record.url)"
           >
             <template #icon>
@@ -70,7 +122,7 @@ const columns = [
             v-if="isInstalled(record.version) && !isCurrent(record.version)"
             type="outline"
             size="small"
-            @click="useVersion(record.version)"
+            @click="useRedisVersion(record.version)"
           >
             启用
           </a-button>
@@ -78,9 +130,25 @@ const columns = [
             v-if="isInstalled(record.version) && isCurrent(record.version)"
             type="outline"
             size="small"
-            @click="unsetCurrent()"
+            @click="unsetRedisCurrent()"
           >
             停用
+          </a-button>
+          <a-button
+            v-if="
+              isInstalled(record.version) &&
+              isCurrent(record.version) &&
+              redisStatus[record.version]?.running
+            "
+            type="outline"
+            status="success"
+            size="small"
+            @click="openRedisTerminal(record.version)"
+          >
+            <template #icon>
+              <icon-code-block />
+            </template>
+            终端
           </a-button>
           <a-popconfirm content="确定要卸载此版本吗？" @ok="uninstall(record.version)">
             <a-button
@@ -95,6 +163,14 @@ const columns = [
               卸载
             </a-button>
           </a-popconfirm>
+          <a-button
+            v-if="isInstalled(record.version)"
+            type="text"
+            size="small"
+            @click="checkRedisStatus(record.version)"
+          >
+            刷新状态
+          </a-button>
         </a-space>
       </template>
     </a-table>

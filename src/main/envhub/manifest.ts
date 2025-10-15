@@ -2,7 +2,7 @@ import { readFileSync } from 'fs'
 import { join } from 'path'
 import { PlatformKey } from './platform'
 
-export type ToolKey = 'python' | 'node' | 'pg' | 'pgvector'
+export type ToolKey = 'python' | 'node' | 'pg' | 'pgvector' | 'redis'
 
 export interface ArtifactRef {
   file: string
@@ -14,6 +14,7 @@ export interface Manifest {
   node?: Record<string, Partial<Record<PlatformKey, ArtifactRef>>>
   pg?: Record<string, Partial<Record<PlatformKey, ArtifactRef>>>
   pgvector?: Record<string, Partial<Record<PlatformKey, ArtifactRef>>> // keyed by pg major ("16")
+  redis?: Record<string, Partial<Record<PlatformKey, ArtifactRef>>>
 }
 
 export function loadManifest(manifestPath: string): Manifest {
