@@ -8,6 +8,7 @@ import {
 } from '@arco-design/web-vue/es/icon'
 import { Message } from '@arco-design/web-vue'
 import { useToolVersion } from './composables/useToolVersion'
+import { useLogsStore } from '../../store/logs'
 import InstallProgressModal from './components/InstallProgressModal.vue'
 
 const {
@@ -39,8 +40,10 @@ async function checkRedisStatus(v: string): Promise<void> {
       redisVersion: v
     })
     redisStatus.value[v] = status
-  } catch (error) {
-    console.error('Failed to check Redis status:', error)
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error)
+    const logsStore = useLogsStore()
+    logsStore.addLog(`Failed to check Redis status: ${message}`, 'error')
   }
 }
 
@@ -67,8 +70,10 @@ async function openRedisTerminal(version: string): Promise<void> {
       version,
       port: 6379
     })
-  } catch (error) {
-    console.error('Failed to open Redis terminal:', error)
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error)
+    const logsStore = useLogsStore()
+    logsStore.addLog(`Failed to open Redis terminal: ${message}`, 'error')
   }
 }
 
@@ -82,7 +87,8 @@ async function restartRedis(version: string): Promise<void> {
     await checkRedisStatus(version)
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error)
-    console.error('Failed to restart Redis:', error)
+    const logsStore = useLogsStore()
+    logsStore.addLog(`Failed to restart Redis: ${message}`, 'error')
     Message.error(`重启失败: ${message}`)
   }
 }
@@ -96,7 +102,8 @@ async function reloadRedisConfig(version: string): Promise<void> {
     Message.success(`Redis ${version} 配置已重载`)
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error)
-    console.error('Failed to reload Redis config:', message)
+    const logsStore = useLogsStore()
+    logsStore.addLog(`Failed to reload Redis config: ${message}`, 'error')
     Message.error(message)
   }
 }

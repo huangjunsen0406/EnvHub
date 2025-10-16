@@ -1,8 +1,9 @@
 import { get as httpsGet } from 'https'
-import { DetectedPlatform } from '../platform'
+import { DetectedPlatform } from '../core/platform'
 import { join } from 'path'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
-import { envhubRoot } from '../paths'
+import { envhubRoot } from '../core/paths'
+import { logInfo } from '../core/log'
 
 export interface OnlineVersion {
   version: string
@@ -45,8 +46,8 @@ function readCache(): VersionCache {
     if (!existsSync(cachePath)) return {}
     const content = readFileSync(cachePath, 'utf-8')
     return JSON.parse(content) as VersionCache
-  } catch (error) {
-    console.warn('Failed to read cache:', error)
+  } catch (error: unknown) {
+    logInfo(`Failed to read cache: ${error instanceof Error ? error.message : String(error)}`)
     return {}
   }
 }
@@ -58,8 +59,8 @@ function writeCache(cache: VersionCache): void {
   try {
     const cachePath = getCachePath()
     writeFileSync(cachePath, JSON.stringify(cache, null, 2), 'utf-8')
-  } catch (error) {
-    console.error('Failed to write cache:', error)
+  } catch (error: unknown) {
+    logInfo(`Failed to write cache: ${error instanceof Error ? error.message : String(error)}`)
   }
 }
 
@@ -78,11 +79,11 @@ function getCachedVersions(
   const age = now - entry.timestamp
 
   if (age > CACHE_TTL) {
-    console.log(`Cache expired for ${tool} (age: ${Math.round(age / 1000 / 60)} minutes)`)
+    logInfo(`Cache expired for ${tool} (age: ${Math.round(age / 1000 / 60)} minutes)`)
     return null
   }
 
-  console.log(`Using cached versions for ${tool} (age: ${Math.round(age / 1000 / 60)} minutes)`)
+  logInfo(`Using cached versions for ${tool} (age: ${Math.round(age / 1000 / 60)} minutes)`)
   return entry.data
 }
 
@@ -121,7 +122,7 @@ export async function fetchPythonVersions(
     const releases = await fetchJSON(releasesUrl)
 
     if (!Array.isArray(releases) || releases.length === 0) {
-      console.warn('No Python releases found')
+      logInfo('No Python releases found')
       return []
     }
 
@@ -161,9 +162,10 @@ export async function fetchPythonVersions(
               })
             }
           }
-        } catch (err) {
+        } catch (err: unknown) {
           // 忽略单个批次的错误，继续处理其他批次
-          console.warn(`Failed to fetch files for ${releaseDate}:`, err)
+          const message = err instanceof Error ? err.message : String(err)
+          logInfo(`Failed to fetch files for ${releaseDate}: ${message}`)
         }
       })
 
@@ -194,8 +196,9 @@ export async function fetchPythonVersions(
     setCachedVersions('python', versions)
 
     return versions
-  } catch (error) {
-    console.error('Failed to fetch Python versions:', error)
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error)
+    logInfo(`Failed to fetch Python versions: ${message}`)
     return []
   }
 }
@@ -204,8 +207,14 @@ export async function fetchPythonVersions(
  * 从文件列表中选择所有适合当前平台的 Python 文件
  * 每个版本选择最优变体
  */
+interface FileItem {
+  type: string
+  name: string
+  url?: string
+}
+
 function selectAllPythonFiles(
-  files: any[],
+  files: FileItem[],
   platformKey: string
 ): Array<{ name: string; url: string }> {
   // 定义平台映射和优先级
@@ -236,7 +245,7 @@ function selectAllPythonFiles(
   })
 
   // 按版本分组
-  const versionGroups = new Map<string, any[]>()
+  const versionGroups = new Map<string, FileItem[]>()
   for (const file of candidates) {
     const version = parsePythonVersion(file.name)
     if (!version) continue
@@ -251,7 +260,7 @@ function selectAllPythonFiles(
   const result: Array<{ name: string; url: string }> = []
   for (const [, filesForVersion] of versionGroups) {
     // 按优先级选择变体
-    let selected: any = null
+    let selected: FileItem | null = null
     for (const variant of config.preferredVariant) {
       const match = filesForVersion.find((f) => f.name.includes(variant))
       if (match) {
@@ -265,7 +274,7 @@ function selectAllPythonFiles(
       selected = filesForVersion[0]
     }
 
-    if (selected) {
+    if (selected && selected.url) {
       result.push({ name: selected.name, url: selected.url })
     }
   }
@@ -302,7 +311,7 @@ export async function fetchNodeVersions(
 
     // 确保返回的是数组
     if (!Array.isArray(index) || index.length === 0) {
-      console.warn('No Node.js versions found or invalid response')
+      logInfo('No Node.js versions found or invalid response')
       return []
     }
 
@@ -335,8 +344,9 @@ export async function fetchNodeVersions(
     setCachedVersions('node', versions)
 
     return versions
-  } catch (error) {
-    console.error('Failed to fetch Node.js versions:', error)
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error)
+    logInfo(`Failed to fetch Node.js versions: ${message}`)
     return []
   }
 }
@@ -486,12 +496,12 @@ export async function fetchJavaVersions(
       `&directly_downloadable=true` +
       `&latest=available`
 
-    console.log('Fetching Java versions from:', apiUrl)
+    logInfo(`Fetching Java versions from: ${apiUrl}`)
 
     const response = await fetchJSON(apiUrl)
 
     if (!response || !Array.isArray(response.result)) {
-      console.warn('No Java versions found or invalid response')
+      logInfo('No Java versions found or invalid response')
       return []
     }
 
@@ -526,8 +536,9 @@ export async function fetchJavaVersions(
             date: pkg.release_date || new Date().toISOString()
           })
         }
-      } catch (err) {
-        console.warn(`Failed to fetch download URL for Java ${version}:`, err)
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err)
+        logInfo(`Failed to fetch download URL for Java ${version}: ${message}`)
       }
     }
 
@@ -548,8 +559,9 @@ export async function fetchJavaVersions(
     setCachedVersions('java', limitedVersions)
 
     return limitedVersions
-  } catch (error) {
-    console.error('Failed to fetch Java versions:', error)
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error)
+    logInfo(`Failed to fetch Java versions: ${message}`)
     return []
   }
 }
@@ -617,16 +629,18 @@ async function fetchJSON(url: string): Promise<any> {
         response.on('end', () => {
           try {
             resolve(JSON.parse(data))
-          } catch (error) {
-            console.error('Failed to parse JSON response:', data.substring(0, 200))
+          } catch (error: unknown) {
+            const sample = data.substring(0, 200)
+            logInfo(`Failed to parse JSON response: ${sample}`)
             reject(error)
           }
         })
       }
     )
 
-    request.on('error', (err) => {
-      console.error('Fetch JSON error:', err)
+    request.on('error', (err: unknown) => {
+      const message = err instanceof Error ? err.message : String(err)
+      logInfo(`Fetch JSON error: ${message}`)
       reject(err)
     })
   })
@@ -675,8 +689,9 @@ export async function fetchRedisVersions(
     setCachedVersions('redis', versions)
 
     return versions
-  } catch (error) {
-    console.error('Failed to fetch Redis versions:', error)
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error)
+    logInfo(`Failed to fetch Redis versions: ${message}`)
     return []
   }
 }

@@ -8,18 +8,18 @@ const logsStore = useLogsStore()
 const autoScroll = ref(true)
 const filter = ref('')
 
-function scrollToBottom() {
+function scrollToBottom(): void {
   const container = document.querySelector('.log-content')
   if (container) {
     container.scrollTop = container.scrollHeight
   }
 }
 
-function clearLogs() {
+function clearLogs(): void {
   logsStore.clearLogs()
 }
 
-function exportLogs() {
+function exportLogs(): void {
   const content = logsStore.logs.map((log) => `[${log.timestamp}] ${log.message}`).join('\n')
   const blob = new Blob([content], { type: 'text/plain' })
   const url = URL.createObjectURL(blob)

@@ -2,9 +2,9 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync
 import { join } from 'path'
 import { envhubRoot, toolchainRoot, redisDataDir } from './paths'
 import { DetectedPlatform } from './platform'
-import { writeShims, removeShims } from './shims'
+import { writeShims, removeShims } from '../env/shims'
 import { execSync } from 'child_process'
-import { writeRedisCliShim } from './installers/redis'
+import { writeRedisCliShim } from '../databases/redis/installer'
 import { logInfo } from './log'
 export type Tool = 'python' | 'node' | 'pg' | 'java' | 'redis'
 
@@ -70,8 +70,9 @@ export function uninstallTool(tool: Tool, version: string, dp: DetectedPlatform)
       // Windows 和 Linux 使用 Node.js 的 rmSync
       rmSync(p, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
     }
-  } catch (error) {
-    console.error(`Failed to uninstall ${tool}@${version}:`, error)
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error)
+    logInfo(`Failed to uninstall ${tool}@${version}: ${message}`)
     throw error
   }
 }

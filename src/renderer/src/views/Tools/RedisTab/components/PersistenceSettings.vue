@@ -98,9 +98,19 @@ onMounted(() => {
       <a-divider>RDB持久化</a-divider>
 
       <div v-for="(rule, index) in form.rdbRules" :key="index" class="flex gap-4 mb-4">
-        <a-input-number v-model="rule.seconds" :min="1" placeholder="900" :style="{ width: '150px' }" />
+        <a-input-number
+          v-model="rule.seconds"
+          :min="1"
+          placeholder="900"
+          :style="{ width: '150px' }"
+        />
         <span class="self-center">秒内，插入</span>
-        <a-input-number v-model="rule.changes" :min="1" placeholder="1" :style="{ width: '150px' }" />
+        <a-input-number
+          v-model="rule.changes"
+          :min="1"
+          placeholder="1"
+          :style="{ width: '150px' }"
+        />
         <span class="self-center">条数据</span>
       </div>
 

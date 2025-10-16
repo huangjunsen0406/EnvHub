@@ -2,6 +2,7 @@
 import { ref, onMounted, computed } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import { IconPlus, IconRefresh } from '@arco-design/web-vue/es/icon'
+import { useLogsStore } from '../../../../store/logs'
 
 const props = defineProps<{
   version: string
@@ -91,7 +92,9 @@ async function loadConfig(): Promise<void> {
       maxDatabases.value = configResult.config.databases
     }
   } catch (e: unknown) {
-    console.warn(`无法获取数据库配置，使用默认值16 ${e instanceof Error ? e.message : String(e)}`)
+    const message = e instanceof Error ? e.message : String(e)
+    const logsStore = useLogsStore()
+    logsStore.addLog(`无法获取数据库配置，使用默认值16: ${message}`, 'warn')
   }
 }
 

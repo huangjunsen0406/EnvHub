@@ -67,9 +67,7 @@ onMounted(() => {
     </div>
 
     <div class="mt-4">
-      <a-alert type="warning">
-        此处为redis主配置文件,若您不了解配置规则,请勿随意修改。
-      </a-alert>
+      <a-alert type="warning"> 此处为redis主配置文件,若您不了解配置规则,请勿随意修改。 </a-alert>
       <a-alert type="error" class="mt-2">
         警告：请勿开启Redis外网访问权限，未限制访问IP的情况下极大概率导致服务器被入侵。
       </a-alert>

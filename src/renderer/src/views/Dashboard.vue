@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue'
 import { IconCheck, IconClockCircle } from '@arco-design/web-vue/es/icon'
 import { useToolsStore } from '../store/tools'
+import { useLogsStore } from '../store/logs'
 
 const toolsStore = useToolsStore()
 
@@ -52,8 +53,10 @@ onMounted(async () => {
   try {
     pathStatus.value.configured = await window.electron.ipcRenderer.invoke('envhub:path:check')
     pathStatus.value.path = systemInfo.value.shimsPath
-  } catch (error) {
-    console.error('Failed to check PATH status:', error)
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error)
+    const logsStore = useLogsStore()
+    logsStore.addLog(`Failed to check PATH status: ${message}`, 'error')
   }
 })
 </script>

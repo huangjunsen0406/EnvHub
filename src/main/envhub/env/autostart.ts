@@ -43,7 +43,9 @@ export function enableAutostartWindows(opts: AutostartOptions): string {
   // Caller should execute the schtasks command with proper privileges when desired.
   // Here we simply return a recommended command string.
   const taskName = opts.name
+
   const args = (opts.args || []).map((a) => a.replace(/"/g, '""')).join(' ')
+  // eslint-disable-next-line no-useless-escape
   const cmd = `schtasks /Create /SC ONLOGON /TN ${taskName} /TR "\"${opts.exec}\" ${args}" /RL HIGHEST /F`
   return cmd
 }

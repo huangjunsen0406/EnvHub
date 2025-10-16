@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'fs'
 import { join } from 'path'
-import { shimsDir } from './paths'
-import { DetectedPlatform } from './platform'
+import { shimsDir } from '../core/paths'
+import { DetectedPlatform } from '../core/platform'
 
 function winCmdShimBody(exePath: string, args: string[] = []): string {
   const quoted = `"${exePath}" ${args.join(' ')}`.trim()

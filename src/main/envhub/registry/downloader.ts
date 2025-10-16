@@ -3,7 +3,8 @@ import { pipeline } from 'stream/promises'
 import { get as httpsGet } from 'https'
 import { get as httpGet } from 'http'
 import { join, dirname } from 'path'
-import { envhubRoot } from '../paths'
+import { envhubRoot } from '../core/paths'
+import { logInfo } from '../core/log'
 
 export interface DownloadProgress {
   downloaded: number
@@ -210,8 +211,9 @@ export function scanDownloadedInstallers(): {
         continue
       }
     }
-  } catch (error) {
-    console.error('Failed to scan download directory:', error)
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error)
+    logInfo(`Failed to scan download directory: ${message}`)
   }
 
   return result

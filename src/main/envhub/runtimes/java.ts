@@ -1,10 +1,11 @@
 import { mkdirSync, readdirSync, existsSync, renameSync, rmSync } from 'fs'
 import { join } from 'path'
-import { DetectedPlatform } from '../platform'
-import { toolchainRoot } from '../paths'
-import { extractArchive, removeQuarantineAttr } from '../extract'
-import { writeShims } from '../shims'
+import { DetectedPlatform } from '../core/platform'
+import { toolchainRoot } from '../core/paths'
+import { extractArchive, removeQuarantineAttr } from '../core/extract'
+import { writeShims } from '../env/shims'
 import { execSync } from 'child_process'
+import { logInfo } from '../core/log'
 
 export interface JavaInstallOptions {
   version: string
@@ -93,8 +94,9 @@ export async function installJava(
     // 对 JDK 可执行文件赋予执行权限
     try {
       execSync(`chmod -R +x "${join(baseDir, 'bin')}"`, { encoding: 'utf8' })
-    } catch (error) {
-      console.warn('Failed to set execute permission on JDK binaries:', error)
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error)
+      logInfo(`Failed to set execute permission on JDK binaries: ${message}`)
     }
   }
 

@@ -12,6 +12,7 @@ import {
 } from '@arco-design/web-vue/es/icon'
 import { Message, Modal } from '@arco-design/web-vue'
 import { useToolVersion } from './composables/useToolVersion'
+import { useLogsStore } from '../../store/logs'
 import InstallProgressModal from './components/InstallProgressModal.vue'
 
 const {
@@ -86,8 +87,10 @@ async function checkPgStatus(v: string): Promise<void> {
       dataDir
     })
     pgStatus.value[v] = status
-  } catch (error) {
-    console.error('Failed to check PG status:', error)
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error)
+    const logsStore = useLogsStore()
+    logsStore.addLog(`Failed to check PG status: ${message}`, 'error')
   }
 }
 

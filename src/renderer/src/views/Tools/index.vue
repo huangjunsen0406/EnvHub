@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useToolsStore } from '../../store/tools'
+import { useLogsStore } from '../../store/logs'
 import PythonTab from './PythonTab.vue'
 import NodeTab from './NodeTab.vue'
 import PostgresTab from './PostgresTab.vue'
@@ -22,14 +23,18 @@ onMounted(async () => {
     await Promise.all(
       tools.map((tool) =>
         !toolsStore.versionsLoaded[tool]
-          ? toolsStore
-              .fetchOnlineVersions(tool, false)
-              .catch((err) => console.error(`Failed to fetch ${tool} versions:`, err))
+          ? toolsStore.fetchOnlineVersions(tool, false).catch((err: unknown) => {
+              const message = err instanceof Error ? err.message : String(err)
+              const logsStore = useLogsStore()
+              logsStore.addLog(`Failed to fetch ${tool} versions: ${message}`, 'error')
+            })
           : Promise.resolve()
       )
     )
-  } catch (error) {
-    console.error('Failed to initialize Tools page:', error)
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error)
+    const logsStore = useLogsStore()
+    logsStore.addLog(`Failed to initialize Tools page: ${message}`, 'error')
   }
 })
 </script>

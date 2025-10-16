@@ -1,11 +1,12 @@
 import { readdirSync, existsSync, rmSync, renameSync, mkdirSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import { execSync } from 'child_process'
-import { DetectedPlatform } from '../platform'
-import { toolchainRoot, redisDataDir, redisLogDir, shimsDir } from '../paths'
-import { extractArchive, removeQuarantineAttr } from '../extract'
-import { writeShims } from '../shims'
+import { DetectedPlatform } from '../../core/platform'
+import { toolchainRoot, redisDataDir, redisLogDir, shimsDir } from '../../core/paths'
+import { extractArchive, removeQuarantineAttr } from '../../core/extract'
+import { writeShims } from '../../env/shims'
 import { spawn } from 'child_process'
+import { logInfo } from '../../core/log'
 
 export interface RedisInstallOptions {
   version: string
@@ -49,8 +50,10 @@ export async function installRedis(opts: RedisInstallOptions): Promise<{
     await removeQuarantineAttr(baseDir)
     try {
       execSync(`chmod -R +x "${join(baseDir, 'bin')}"`, { encoding: 'utf8' })
-    } catch (error) {
-      console.warn('Failed to set execute permission:', error)
+    } catch (error: unknown) {
+      logInfo(
+        `Failed to set execute permission: ${error instanceof Error ? error.message : String(error)}`
+      )
     }
   }
 
@@ -178,9 +181,11 @@ export async function redisStop(binDir: string, port: number): Promise<void> {
 
   try {
     await run(cliExe, ['-p', port.toString(), 'SHUTDOWN', 'SAVE'])
-  } catch (error) {
+  } catch (error: unknown) {
     // Redis 可能已经停止，忽略错误
-    console.log('Redis stop command failed (may already be stopped):', error)
+    logInfo(
+      `Redis stop command failed (may already be stopped): ${error instanceof Error ? error.message : String(error)}`
+    )
   }
 }
 

@@ -31,10 +31,6 @@ export function logsDir(): string {
   return join(envhubRoot(), 'logs')
 }
 
-export function bundlesManifestPath(bundleDir: string): string {
-  return join(bundleDir, 'manifest.json')
-}
-
 export function redisDataDir(version: string, cluster: string): string {
   return join(envhubRoot(), 'data', 'redis', version, cluster)
 }

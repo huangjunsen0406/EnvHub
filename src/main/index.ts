@@ -2,20 +2,20 @@ import { app, shell, BrowserWindow, ipcMain, dialog } from 'electron'
 import { homedir } from 'os'
 import { join } from 'path'
 import { mkdirSync, existsSync, unlinkSync } from 'fs'
-import { detectPlatform } from './envhub/platform'
-import { toolchainRoot, envhubRoot } from './envhub/paths'
-import { installNode } from './envhub/installers/node'
-import { installJava } from './envhub/installers/java'
+import { detectPlatform } from './envhub/core/platform'
+import { toolchainRoot, envhubRoot } from './envhub/core/paths'
+import { installNode } from './envhub/runtimes/node'
+import { installJava } from './envhub/runtimes/java'
 import {
   installPostgres,
   initDb,
   pgStart,
   createUser,
   createDatabase
-} from './envhub/installers/pg'
-import { installRedis, redisStart, redisStop } from './envhub/installers/redis'
-import { logInfo } from './envhub/log'
-import { enableAutostartMac, enableAutostartWindows } from './envhub/autostart'
+} from './envhub/databases/postgres/installer'
+import { installRedis, redisStart, redisStop } from './envhub/databases/redis/installer'
+import { logInfo } from './envhub/core/log'
+import { enableAutostartMac, enableAutostartWindows } from './envhub/env/autostart'
 import { spawn, exec } from 'child_process'
 import {
   getCurrent,
@@ -23,30 +23,30 @@ import {
   setCurrent,
   uninstallTool,
   updateShimsForTool
-} from './envhub/state'
-import { isPathConfigured, addToPath, removeFromPath } from './envhub/path-manager'
-import { isPgRunning, pgStop, getPgStatus } from './envhub/pg-manager'
-import { isRedisRunning, getRedisStatus } from './envhub/redis-manager'
+} from './envhub/core/state'
+import { isPathConfigured, addToPath, removeFromPath } from './envhub/env/path-manager'
+import { isPgRunning, pgStop, getPgStatus } from './envhub/databases/postgres/manager'
+import { isRedisRunning, getRedisStatus } from './envhub/databases/redis/manager'
 import {
   addDatabaseMetadata,
   getAllDatabaseMetadata,
   updateDatabasePassword,
   deleteDatabaseMetadata
-} from './envhub/pg-metadata'
+} from './envhub/databases/postgres/metadata'
 import {
   fetchPythonVersions,
   fetchNodeVersions,
   fetchPostgresVersions,
   fetchJavaVersions,
   fetchRedisVersions
-} from './envhub/online/version-fetcher'
+} from './envhub/registry/sources'
 import {
   downloadFile,
   cacheDir,
   formatBytes,
   formatTime,
   scanDownloadedInstallers
-} from './envhub/online/downloader'
+} from './envhub/registry/downloader'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
 
@@ -97,7 +97,7 @@ app.whenReady().then(() => {
   })
 
   // IPC test
-  ipcMain.on('ping', () => console.log('pong'))
+  ipcMain.on('ping', () => logInfo('Ping received from renderer'))
 
   // PATH 环境变量管理
   ipcMain.handle('envhub:path:check', () => {
@@ -156,7 +156,7 @@ app.whenReady().then(() => {
             try {
               const base = toolchainRoot('pg', cur, dp)
               const binDir = join(base, 'pgsql', 'bin')
-              const { pgDataDir } = await import('./envhub/paths')
+              const { pgDataDir } = await import('./envhub/core/paths')
               const dataDir = pgDataDir(cur, 'main')
               logInfo(`Stopping PostgreSQL for unset: ${dataDir}`)
               await pgStop(binDir, dataDir)
@@ -173,7 +173,7 @@ app.whenReady().then(() => {
           try {
             const baseOld = toolchainRoot('pg', cur, dp)
             const binOld = join(baseOld, 'pgsql', 'bin')
-            const { pgDataDir } = await import('./envhub/paths')
+            const { pgDataDir } = await import('./envhub/core/paths')
             const dataOld = pgDataDir(cur, 'main')
             logInfo(`Stopping previous PostgreSQL: ${dataOld}`)
             await pgStop(binOld, dataOld)
@@ -189,7 +189,7 @@ app.whenReady().then(() => {
         try {
           const base = toolchainRoot('pg', args.version, dp)
           const binDir = join(base, 'pgsql', 'bin')
-          const { pgDataDir } = await import('./envhub/paths')
+          const { pgDataDir } = await import('./envhub/core/paths')
           const dataDir = pgDataDir(args.version, 'main')
           const running = await isPgRunning(dataDir)
           if (!running) {
@@ -233,7 +233,7 @@ app.whenReady().then(() => {
               const binDir = join(base, dp.platformKey === 'win-x64' ? '' : 'bin')
 
               // 读取配置文件获取实际端口
-              const { redisDataDir } = await import('./envhub/paths')
+              const { redisDataDir } = await import('./envhub/core/paths')
               const { readFile } = await import('fs/promises')
               const dataDir = redisDataDir(cur, 'main')
               const confPath = join(dataDir, 'redis.conf')
@@ -250,7 +250,7 @@ app.whenReady().then(() => {
               }
 
               logInfo(`Stopping Redis ${cur} on port ${port}`)
-              const { redisStop } = await import('./envhub/redis-manager')
+              const { redisStop } = await import('./envhub/databases/redis/manager')
               await redisStop(binDir, port)
             } catch (e: unknown) {
               logInfo(`Stop on unset skipped/failed: ${e instanceof Error ? e.message : String(e)}`)
@@ -267,7 +267,7 @@ app.whenReady().then(() => {
             const binOld = join(baseOld, dp.platformKey === 'win-x64' ? '' : 'bin')
 
             // 读取旧版本的配置文件获取实际端口
-            const { redisDataDir } = await import('./envhub/paths')
+            const { redisDataDir } = await import('./envhub/core/paths')
             const { readFile } = await import('fs/promises')
             const dataOldDir = redisDataDir(cur, 'main')
             const confOldPath = join(dataOldDir, 'redis.conf')
@@ -284,7 +284,7 @@ app.whenReady().then(() => {
             }
 
             logInfo(`Stopping previous Redis ${cur} on port ${oldPort}`)
-            const { redisStop } = await import('./envhub/redis-manager')
+            const { redisStop } = await import('./envhub/databases/redis/manager')
             await redisStop(binOld, oldPort)
           } catch (e: unknown) {
             logInfo(`Stop previous failed: ${e instanceof Error ? e.message : String(e)}`)
@@ -301,8 +301,8 @@ app.whenReady().then(() => {
           const running = await isRedisRunning(defaultPort)
           if (!running) {
             logInfo(`Starting Redis for current version (port ${defaultPort})`)
-            const { redisDataDir } = await import('./envhub/paths')
-            const { generateRedisConf } = await import('./envhub/installers/redis')
+            const { redisDataDir } = await import('./envhub/core/paths')
+            const { generateRedisConf } = await import('./envhub/databases/redis/installer')
             const dataDir = redisDataDir(args.version, 'main')
             const confPath = join(dataDir, 'redis.conf')
 
@@ -410,7 +410,8 @@ app.whenReady().then(() => {
         .filter((name: string) => name && name !== 'postgres')
       return { databases }
     } catch (error: unknown) {
-      console.error('Failed to list databases:', error)
+      const message = error instanceof Error ? error.message : String(error)
+      logInfo(`Failed to list databases: ${message}`)
       return { databases: [] }
     }
   })
@@ -465,7 +466,8 @@ app.whenReady().then(() => {
 
         return { databases }
       } catch (error: unknown) {
-        console.error('Failed to get databases with metadata:', error)
+        const message = error instanceof Error ? error.message : String(error)
+        logInfo(`Failed to get databases with metadata: ${message}`)
         return { databases: [] }
       }
     }
@@ -895,26 +897,23 @@ app.whenReady().then(() => {
         logInfo(`Extracting and installing ${tool} ${version}`)
 
         if (tool === 'python') {
-          const { installPython } = await import('./envhub/installers/python')
+          const { installPython } = await import('./envhub/runtimes/python')
           await installPython({
             version,
             platform: dp,
-            bundleDir: cacheDir(),
-            artifact: { file: fileName, sha256: '' }
+            archivePath: savePath
           })
         } else if (tool === 'node') {
           await installNode({
             version,
             platform: dp,
-            bundleDir: cacheDir(),
-            artifact: { file: fileName, sha256: '' }
+            archivePath: savePath
           })
         } else if (tool === 'pg') {
           await installPostgres({
             version,
             platform: dp,
-            bundleDir: cacheDir(),
-            artifact: { file: fileName, sha256: '' }
+            archivePath: savePath
           })
         } else if (tool === 'java') {
           await installJava({
@@ -983,7 +982,7 @@ app.whenReady().then(() => {
       // 尝试从配置文件读取实际端口
       if (!args.port) {
         try {
-          const { redisDataDir } = await import('./envhub/paths')
+          const { redisDataDir } = await import('./envhub/core/paths')
           const { readFile } = await import('fs/promises')
           const dataDir = redisDataDir(args.redisVersion, 'main')
           const confPath = join(dataDir, 'redis.conf')
@@ -1182,7 +1181,7 @@ app.whenReady().then(() => {
       let port = args.port || 6379
       if (!args.port) {
         try {
-          const { redisDataDir } = await import('./envhub/paths')
+          const { redisDataDir } = await import('./envhub/core/paths')
           const { readFile } = await import('fs/promises')
           const dataDir = redisDataDir(args.version, 'main')
           const confPath = join(dataDir, 'redis.conf')
@@ -1249,7 +1248,7 @@ app.whenReady().then(() => {
 
     try {
       // 读取配置文件获取端口
-      const { redisDataDir } = await import('./envhub/paths')
+      const { redisDataDir } = await import('./envhub/core/paths')
       const { readFile } = await import('fs/promises')
       const dataDir = redisDataDir(args.version, 'main')
       const confPath = join(dataDir, 'redis.conf')
@@ -1266,7 +1265,7 @@ app.whenReady().then(() => {
       }
 
       // 先停止
-      const { redisStop } = await import('./envhub/redis-manager')
+      const { redisStop } = await import('./envhub/databases/redis/manager')
       await redisStop(binDir, port)
 
       // 等待停止完成
@@ -1294,7 +1293,7 @@ app.whenReady().then(() => {
 
     try {
       // 读取配置文件获取端口
-      const { redisDataDir } = await import('./envhub/paths')
+      const { redisDataDir } = await import('./envhub/core/paths')
       const { readFile } = await import('fs/promises')
       const dataDir = redisDataDir(args.version, 'main')
       const confPath = join(dataDir, 'redis.conf')
@@ -1336,7 +1335,7 @@ app.whenReady().then(() => {
 
   // Redis 获取配置文件
   ipcMain.handle('envhub:redis:getConfig', async (_evt, args: { version: string }) => {
-    const { redisDataDir } = await import('./envhub/paths')
+    const { redisDataDir } = await import('./envhub/core/paths')
     const { readFile } = await import('fs/promises')
     const dataDir = redisDataDir(args.version, 'main')
     const confPath = join(dataDir, 'redis.conf')
@@ -1379,7 +1378,7 @@ app.whenReady().then(() => {
   ipcMain.handle(
     'envhub:redis:saveConfig',
     async (_evt, args: { version: string; content: string }) => {
-      const { redisDataDir } = await import('./envhub/paths')
+      const { redisDataDir } = await import('./envhub/core/paths')
       const { writeFile } = await import('fs/promises')
       const dataDir = redisDataDir(args.version, 'main')
       const confPath = join(dataDir, 'redis.conf')
@@ -1402,7 +1401,7 @@ app.whenReady().then(() => {
       _evt,
       args: { version: string; config: Record<string, unknown>; removeKeys?: string[] }
     ) => {
-      const { redisDataDir } = await import('./envhub/paths')
+      const { redisDataDir } = await import('./envhub/core/paths')
       const { readFile, writeFile } = await import('fs/promises')
       const dataDir = redisDataDir(args.version, 'main')
       const confPath = join(dataDir, 'redis.conf')
@@ -1476,7 +1475,7 @@ app.whenReady().then(() => {
 
     try {
       // 读取配置文件获取端口和密码
-      const { redisDataDir } = await import('./envhub/paths')
+      const { redisDataDir } = await import('./envhub/core/paths')
       const { readFile } = await import('fs/promises')
       const dataDir = redisDataDir(args.version, 'main')
       const confPath = join(dataDir, 'redis.conf')
@@ -1538,7 +1537,7 @@ app.whenReady().then(() => {
 
       try {
         // 读取配置文件获取端口和密码
-        const { redisDataDir } = await import('./envhub/paths')
+        const { redisDataDir } = await import('./envhub/core/paths')
         const { readFile } = await import('fs/promises')
         const dataDir = redisDataDir(args.version, 'main')
         const confPath = join(dataDir, 'redis.conf')
@@ -1629,7 +1628,7 @@ app.whenReady().then(() => {
       const binDir = join(base, platform.platformKey === 'win-x64' ? '' : 'bin')
 
       try {
-        const { redisDataDir } = await import('./envhub/paths')
+        const { redisDataDir } = await import('./envhub/core/paths')
         const { readFile } = await import('fs/promises')
         const dataDir = redisDataDir(args.version, 'main')
         const confPath = join(dataDir, 'redis.conf')
@@ -1745,7 +1744,7 @@ app.whenReady().then(() => {
       const binDir = join(base, platform.platformKey === 'win-x64' ? '' : 'bin')
 
       try {
-        const { redisDataDir } = await import('./envhub/paths')
+        const { redisDataDir } = await import('./envhub/core/paths')
         const { readFile } = await import('fs/promises')
         const dataDir = redisDataDir(args.version, 'main')
         const confPath = join(dataDir, 'redis.conf')
@@ -1841,7 +1840,7 @@ app.whenReady().then(() => {
       const binDir = join(base, platform.platformKey === 'win-x64' ? '' : 'bin')
 
       try {
-        const { redisDataDir } = await import('./envhub/paths')
+        const { redisDataDir } = await import('./envhub/core/paths')
         const { readFile } = await import('fs/promises')
         const dataDir = redisDataDir(args.version, 'main')
         const confPath = join(dataDir, 'redis.conf')

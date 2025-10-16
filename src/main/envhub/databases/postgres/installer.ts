@@ -1,17 +1,16 @@
 import { mkdirSync, writeFileSync } from 'fs'
 import { join } from 'path'
-import { DetectedPlatform } from '../platform'
-import { pgDataDir, toolchainRoot } from '../paths'
-import { ArtifactRef } from '../manifest'
-import { extractArchive, removeQuarantineAttr } from '../extract'
-import { writeShims } from '../shims'
+import { DetectedPlatform } from '../../core/platform'
+import { pgDataDir, toolchainRoot } from '../../core/paths'
+import { extractArchive, removeQuarantineAttr } from '../../core/extract'
+import { writeShims } from '../../env/shims'
 import { spawn } from 'child_process'
+import { logInfo } from '../../core/log'
 
 export interface PgInstallOptions {
   version: string // e.g., 16.4
   platform: DetectedPlatform
-  bundleDir: string
-  artifact: ArtifactRef
+  archivePath: string
 }
 
 export async function installPostgres(
@@ -19,7 +18,7 @@ export async function installPostgres(
 ): Promise<{ binDir: string; dataDir?: string }> {
   const baseDir = toolchainRoot('pg', opts.version, opts.platform)
   mkdirSync(baseDir, { recursive: true })
-  await extractArchive(join(opts.bundleDir, opts.artifact.file), baseDir)
+  await extractArchive(opts.archivePath, baseDir)
   await removeQuarantineAttr(baseDir)
 
   // EDB binaries 解压后在 pgsql/ 子目录中
@@ -66,7 +65,7 @@ export async function initDb(pgBinDir: string, opts: PgInitOptions): Promise<str
   const { existsSync } = await import('fs')
   const pgVersionFile = join(dataDir, 'PG_VERSION')
   if (existsSync(pgVersionFile)) {
-    console.log(`Database cluster already initialized at ${dataDir}`)
+    logInfo(`Database cluster already initialized at ${dataDir}`)
     return dataDir
   }
 
@@ -84,12 +83,20 @@ export async function initDb(pgBinDir: string, opts: PgInitOptions): Promise<str
   try {
     const conf = `listen_addresses = 'localhost'\nport = ${opts.port || 5432}\n`
     writeFileSync(confPath, conf, { flag: 'a' })
-  } catch {}
+  } catch (error: unknown) {
+    logInfo(
+      `Failed to write postgresql.conf: ${error instanceof Error ? error.message : String(error)}`
+    )
+  }
   try {
     const authMethod = opts.auth || 'trust'
     const hba = `# TYPE  DATABASE        USER            ADDRESS                 METHOD\nlocal   all             all                                     ${authMethod}\n`
     writeFileSync(hbaPath, hba, { flag: 'a' })
-  } catch {}
+  } catch (error: unknown) {
+    logInfo(
+      `Failed to write pg_hba.conf: ${error instanceof Error ? error.message : String(error)}`
+    )
+  }
 
   return dataDir
 }
@@ -131,10 +138,13 @@ export async function createDatabase(
     const result = await runWithOutput(psql, ['-d', 'postgres', '-tAc', checkSql])
     if (result.trim()) {
       // 数据库已存在
+      logInfo(`Database ${dbName} already exists`)
       return
     }
-  } catch {
-    // 忽略检查错误
+  } catch (error: unknown) {
+    logInfo(
+      `Failed to check database existence: ${error instanceof Error ? error.message : String(error)}`
+    )
   }
 
   // 创建数据库

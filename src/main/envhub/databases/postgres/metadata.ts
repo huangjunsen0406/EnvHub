@@ -1,6 +1,7 @@
 import { join } from 'path'
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'fs'
-import { pgDataDir } from './paths'
+import { pgDataDir } from '../../core/paths'
+import { logInfo } from '../../core/log'
 
 export interface DatabaseMetadata {
   dbName: string
@@ -36,8 +37,9 @@ function readMetadata(majorVersion: string, cluster: string): MetadataFile {
   try {
     const content = readFileSync(metadataPath, 'utf-8')
     return JSON.parse(content) as MetadataFile
-  } catch (error) {
-    console.error('Failed to read metadata:', error)
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error)
+    logInfo(`Failed to read metadata: ${message}`)
     return { databases: [] }
   }
 }
@@ -50,8 +52,9 @@ function writeMetadata(majorVersion: string, cluster: string, data: MetadataFile
 
   try {
     writeFileSync(metadataPath, JSON.stringify(data, null, 2), 'utf-8')
-  } catch (error) {
-    console.error('Failed to write metadata:', error)
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error)
+    logInfo(`Failed to write metadata: ${message}`)
     throw error
   }
 }
@@ -69,7 +72,7 @@ export function addDatabaseMetadata(
   // 检查是否已存在
   const exists = metadata.databases.find((d) => d.dbName === db.dbName)
   if (exists) {
-    console.warn(`Database ${db.dbName} already exists in metadata`)
+    logInfo(`Database ${db.dbName} already exists in metadata`)
     return
   }
 
@@ -97,7 +100,7 @@ export function updateDatabasePassword(
     db.password = newPassword
     writeMetadata(majorVersion, cluster, metadata)
   } else {
-    console.warn(`Database with username ${username} not found in metadata`)
+    logInfo(`Database with username ${username} not found in metadata`)
   }
 }
 

@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
+import { useLogsStore } from './logs'
 
 export interface OnlineVersion {
   version: string
@@ -85,8 +86,10 @@ export const useToolsStore = defineStore('tools', () => {
           })
           onlineVersions.value[t] = versions || []
           versionsLoaded.value[t] = true
-        } catch (error) {
-          console.error(`Failed to fetch ${t} versions:`, error)
+        } catch (error: unknown) {
+          const message = error instanceof Error ? error.message : String(error)
+          const logsStore = useLogsStore()
+          logsStore.addLog(`Failed to fetch ${t} versions: ${message}`, 'error')
           onlineVersions.value[t] = []
           versionsLoaded.value[t] = false
         }
@@ -101,8 +104,10 @@ export const useToolsStore = defineStore('tools', () => {
     try {
       const res = await window.electron.ipcRenderer.invoke('envhub:installed:list')
       installed.value = res
-    } catch (error) {
-      console.error('Failed to refresh installed tools:', error)
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error)
+      const logsStore = useLogsStore()
+      logsStore.addLog(`Failed to refresh installed tools: ${message}`, 'error')
       // 返回空数据而不是抛出错误
       installed.value = {
         python: [],
@@ -120,9 +125,15 @@ export const useToolsStore = defineStore('tools', () => {
     try {
       const scanned = await window.electron.ipcRenderer.invoke('envhub:scanDownloadedInstallers')
       downloadedInstallers.value = scanned || { python: {}, pg: {} }
-      console.log('Scanned downloaded installers:', downloadedInstallers.value)
-    } catch (error) {
-      console.error('Failed to scan downloaded installers:', error)
+      const logsStore = useLogsStore()
+      logsStore.addLog(
+        `Scanned ${Object.keys(downloadedInstallers.value.python).length} Python installers, ${Object.keys(downloadedInstallers.value.pg).length} PostgreSQL installers`,
+        'info'
+      )
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error)
+      const logsStore = useLogsStore()
+      logsStore.addLog(`Failed to scan downloaded installers: ${message}`, 'error')
       downloadedInstallers.value = { python: {}, pg: {} }
     }
   }

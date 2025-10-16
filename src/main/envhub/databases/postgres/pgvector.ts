@@ -1,11 +1,9 @@
 import { copyFileSync, mkdirSync, readdirSync } from 'fs'
 import { join } from 'path'
-import { ArtifactRef } from './manifest'
-import { extractArchive, removeQuarantineAttr } from './extract'
+import { extractArchive, removeQuarantineAttr } from '../../core/extract'
 
 export interface PgVectorInstallOptions {
-  bundleDir: string
-  artifact: ArtifactRef
+  archivePath: string
   pgRootDir: string // the unpacked PG root with lib/ and share/extension/
 }
 
@@ -13,7 +11,7 @@ export interface PgVectorInstallOptions {
 export async function installPgVector(opts: PgVectorInstallOptions): Promise<void> {
   const temp = join(opts.pgRootDir, '.tmp-pgvector')
   mkdirSync(temp, { recursive: true })
-  await extractArchive(join(opts.bundleDir, opts.artifact.file), temp)
+  await extractArchive(opts.archivePath, temp)
   await removeQuarantineAttr(temp)
 
   const libSrc = join(temp, 'lib')

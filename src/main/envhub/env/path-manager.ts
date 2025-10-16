@@ -2,7 +2,7 @@ import { existsSync, readFileSync, writeFileSync, appendFileSync } from 'fs'
 import { homedir } from 'os'
 import { join } from 'path'
 import { spawn } from 'child_process'
-import { shimsDir } from './paths'
+import { shimsDir } from '../core/paths'
 
 /**
  * 检查 PATH 中是否已包含 shims 目录

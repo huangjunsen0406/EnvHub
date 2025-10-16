@@ -1,29 +1,25 @@
 import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, symlinkSync } from 'fs'
 import { join } from 'path'
-import { DetectedPlatform } from '../platform'
-import { toolchainRoot } from '../paths'
-import { ArtifactRef } from '../manifest'
-import { extractArchive, removeQuarantineAttr } from '../extract'
-import { spawn } from 'child_process'
-import { logInfo } from '../log'
+import { DetectedPlatform } from '../core/platform'
+import { toolchainRoot } from '../core/paths'
+import { extractArchive, removeQuarantineAttr } from '../core/extract'
+import { logInfo } from '../core/log'
+import { spawnSync } from 'child_process'
 
 export interface PythonInstallOptions {
   version: string
   platform: DetectedPlatform
-  bundleDir: string
-  artifact: ArtifactRef
+  archivePath: string
 }
 
 export async function installPython(opts: PythonInstallOptions): Promise<string> {
   const baseDir = toolchainRoot('python', opts.version, opts.platform)
   mkdirSync(baseDir, { recursive: true })
 
-  const archivePath = join(opts.bundleDir, opts.artifact.file)
-
   // 解压到临时目录
   const tempExtractDir = join(baseDir, 'temp_extract')
   mkdirSync(tempExtractDir, { recursive: true })
-  await extractArchive(archivePath, tempExtractDir)
+  await extractArchive(opts.archivePath, tempExtractDir)
 
   // python-build-standalone 解压后会有一个 python 目录
   const entries = readdirSync(tempExtractDir)
@@ -78,8 +74,9 @@ export async function installPython(opts: PythonInstallOptions): Promise<string>
       try {
         symlinkSync('python3', pythonPath)
         finalPythonExe = pythonPath
-      } catch (error) {
-        console.warn('Failed to create python symlink:', error)
+      } catch (error: unknown) {
+        const message = error instanceof Error ? error.message : String(error)
+        logInfo(`Failed to create python symlink: ${message}`)
         finalPythonExe = python3Path
       }
     } else {
@@ -90,9 +87,16 @@ export async function installPython(opts: PythonInstallOptions): Promise<string>
 
   // Ensure pip is available
   try {
-    await runPython(finalPythonExe, ['-m', 'ensurepip', '--upgrade'])
-  } catch (error) {
-    console.warn('Failed to ensure pip, it may already be installed:', error)
+    const result = spawnSync(finalPythonExe, ['-m', 'ensurepip', '--upgrade'], {
+      stdio: 'inherit'
+    })
+    if (result.error) {
+      const message = result.error.message || String(result.error)
+      logInfo(`Failed to ensure pip: ${message}`)
+    }
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error)
+    logInfo(`Failed to ensure pip, it may already be installed: ${message}`)
   }
 
   // Note: Shims will be created when user activates this version via updateShimsForTool
@@ -110,29 +114,4 @@ function findBinDir(baseDir: string): string {
     logInfo((e as Error).message)
   }
   return baseDir
-}
-
-function runPython(pythonExe: string, args: string[]): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const p = spawn(pythonExe, args, { stdio: 'inherit' })
-    p.on('error', reject)
-    p.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`python exited ${code}`))))
-  })
-}
-
-export interface PythonToolsOptions {
-  pythonVersion: string
-  platform: DetectedPlatform
-  wheelsDir: string // absolute path to wheelhouse in bundle
-  packages?: string[] // defaults to [ 'pipx', 'uv' ]
-}
-
-export async function installPythonTools(opts: PythonToolsOptions): Promise<void> {
-  const baseDir = toolchainRoot('python', opts.pythonVersion, opts.platform)
-  const binDir = process.platform === 'win32' ? baseDir : findBinDir(baseDir)
-  const pythonExe =
-    process.platform === 'win32' ? join(binDir, 'python.exe') : join(binDir, 'python')
-  const pkgs = opts.packages && opts.packages.length > 0 ? opts.packages : ['pipx', 'uv']
-  const args = ['-m', 'pip', 'install', '--no-index', '--find-links', opts.wheelsDir, ...pkgs]
-  await runPython(pythonExe, args)
 }
