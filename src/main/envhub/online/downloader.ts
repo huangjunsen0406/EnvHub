@@ -1,4 +1,4 @@
-import { createWriteStream, existsSync, mkdirSync, statSync } from 'fs'
+import { createWriteStream, existsSync, mkdirSync, statSync, renameSync, readdirSync } from 'fs'
 import { pipeline } from 'stream/promises'
 import { get as httpsGet } from 'https'
 import { get as httpGet } from 'http'
@@ -42,15 +42,14 @@ export async function downloadFile(options: DownloadOptions): Promise<string> {
   const tempPath = `${savePath}.part`
   let downloaded = 0
   let total = 0
-  let startTime = Date.now()
-  let lastTime = startTime
+  let lastTime = Date.now()
   let lastDownloaded = 0
 
   // 检查是否支持续传
   const existingSize = resume && existsSync(tempPath) ? statSync(tempPath).size : 0
 
   return new Promise((resolve, reject) => {
-    const headers: any = {
+    const headers: Record<string, string> = {
       'User-Agent': 'EnvHub/1.0 (Electron)',
       Accept: '*/*'
     }
@@ -127,8 +126,7 @@ export async function downloadFile(options: DownloadOptions): Promise<string> {
       pipeline(response, fileStream)
         .then(() => {
           // 重命名临时文件
-          const fs = require('fs')
-          fs.renameSync(tempPath, savePath)
+          renameSync(tempPath, savePath)
 
           // 最后一次进度更新
           if (onProgress) {
@@ -183,7 +181,6 @@ export function scanDownloadedInstallers(): {
   python: Record<string, string>
   pg: Record<string, string>
 } {
-  const fs = require('fs')
   const result = {
     python: {} as Record<string, string>,
     pg: {} as Record<string, string>
@@ -195,11 +192,11 @@ export function scanDownloadedInstallers(): {
   }
 
   try {
-    const files = fs.readdirSync(downloadDir)
+    const files = readdirSync(downloadDir)
 
     for (const file of files) {
       const fullPath = join(downloadDir, file)
-      const stat = fs.statSync(fullPath)
+      const stat = statSync(fullPath)
 
       // 只处理文件，忽略目录
       if (!stat.isFile()) continue

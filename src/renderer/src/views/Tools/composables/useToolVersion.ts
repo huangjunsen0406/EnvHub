@@ -1,6 +1,6 @@
-import { ref, computed } from 'vue'
+import { ref, computed, type Ref, type ComputedRef } from 'vue'
 import { Message } from '@arco-design/web-vue'
-import { useToolsStore } from '../../../store/tools'
+import { useToolsStore, type OnlineVersion, type InstalledVersion } from '../../../store/tools'
 
 export type Tool = 'python' | 'node' | 'pg' | 'java' | 'redis'
 
@@ -16,7 +16,25 @@ export interface InstallProgress {
   eta: string
 }
 
-export function useToolVersion(tool: Tool) {
+export interface UseToolVersionReturn {
+  fetchingVersions: Ref<boolean>
+  installingVersions: Ref<Record<string, boolean>>
+  installProgress: Ref<InstallProgress>
+  onlineVersions: ComputedRef<OnlineVersion[]>
+  installed: ComputedRef<InstalledVersion[]>
+  currentVersion: ComputedRef<string | undefined>
+  isInstalled: (version: string) => boolean
+  isCurrent: (version: string) => boolean
+  fetchVersions: (forceRefresh?: boolean, silent?: boolean) => Promise<void>
+  refreshVersions: () => Promise<void>
+  useVersion: (version: string) => Promise<void>
+  unsetCurrent: () => Promise<void>
+  uninstall: (version: string) => Promise<void>
+  installOnline: (version: string, url: string) => Promise<void>
+  closeInstallProgress: () => void
+}
+
+export function useToolVersion(tool: Tool): UseToolVersionReturn {
   const toolsStore = useToolsStore()
   const fetchingVersions = ref(false)
   const installingVersions = ref<Record<string, boolean>>({})
@@ -38,7 +56,7 @@ export function useToolVersion(tool: Tool) {
   const currentVersion = computed(() => toolsStore.installed.current?.[tool])
 
   function isInstalled(version: string): boolean {
-    return installed.value.some((x: { version: string }) => x.version === version)
+    return installed.value.some((x) => x.version === version)
   }
 
   function isCurrent(version: string): boolean {

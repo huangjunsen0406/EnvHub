@@ -1,10 +1,11 @@
-import { mkdirSync } from 'fs'
+import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, symlinkSync } from 'fs'
 import { join } from 'path'
 import { DetectedPlatform } from '../platform'
 import { toolchainRoot } from '../paths'
 import { ArtifactRef } from '../manifest'
 import { extractArchive, removeQuarantineAttr } from '../extract'
 import { spawn } from 'child_process'
+import { logInfo } from '../log'
 
 export interface PythonInstallOptions {
   version: string
@@ -17,7 +18,6 @@ export async function installPython(opts: PythonInstallOptions): Promise<string>
   const baseDir = toolchainRoot('python', opts.version, opts.platform)
   mkdirSync(baseDir, { recursive: true })
 
-  const fs = require('fs') as typeof import('fs')
   const archivePath = join(opts.bundleDir, opts.artifact.file)
 
   // 解压到临时目录
@@ -26,36 +26,36 @@ export async function installPython(opts: PythonInstallOptions): Promise<string>
   await extractArchive(archivePath, tempExtractDir)
 
   // python-build-standalone 解压后会有一个 python 目录
-  const entries = fs.readdirSync(tempExtractDir)
+  const entries = readdirSync(tempExtractDir)
   const pythonDir = entries.find((e) => e === 'python' || e.startsWith('cpython-'))
 
   if (pythonDir) {
     // 移动内容
     const extractedPath = join(tempExtractDir, pythonDir)
-    const files = fs.readdirSync(extractedPath)
+    const files = readdirSync(extractedPath)
     for (const file of files) {
       const src = join(extractedPath, file)
       const dest = join(baseDir, file)
-      if (fs.existsSync(dest)) {
-        fs.rmSync(dest, { recursive: true, force: true })
+      if (existsSync(dest)) {
+        rmSync(dest, { recursive: true, force: true })
       }
-      fs.renameSync(src, dest)
+      renameSync(src, dest)
     }
   } else {
     // 如果没有子目录，直接移动所有内容
-    const files = fs.readdirSync(tempExtractDir)
+    const files = readdirSync(tempExtractDir)
     for (const file of files) {
       const src = join(tempExtractDir, file)
       const dest = join(baseDir, file)
-      if (fs.existsSync(dest)) {
-        fs.rmSync(dest, { recursive: true, force: true })
+      if (existsSync(dest)) {
+        rmSync(dest, { recursive: true, force: true })
       }
-      fs.renameSync(src, dest)
+      renameSync(src, dest)
     }
   }
 
   // 清理临时目录
-  fs.rmSync(tempExtractDir, { recursive: true, force: true })
+  rmSync(tempExtractDir, { recursive: true, force: true })
 
   await removeQuarantineAttr(baseDir)
 
@@ -71,12 +71,12 @@ export async function installPython(opts: PythonInstallOptions): Promise<string>
     const pythonPath = join(binDir, 'python')
     const python3Path = join(binDir, 'python3')
 
-    if (fs.existsSync(pythonPath)) {
+    if (existsSync(pythonPath)) {
       finalPythonExe = pythonPath
-    } else if (fs.existsSync(python3Path)) {
+    } else if (existsSync(python3Path)) {
       // 如果只有 python3，创建 python 符号链接
       try {
-        fs.symlinkSync('python3', pythonPath)
+        symlinkSync('python3', pythonPath)
         finalPythonExe = pythonPath
       } catch (error) {
         console.warn('Failed to create python symlink:', error)
@@ -105,9 +105,10 @@ function findBinDir(baseDir: string): string {
   const candidate = join(baseDir, 'bin')
   try {
     // dynamic import to avoid fs/promises
-    const fs = require('fs') as typeof import('fs')
-    if (fs.existsSync(candidate)) return candidate
-  } catch {}
+    if (existsSync(candidate)) return candidate
+  } catch (e: unknown) {
+    logInfo((e as Error).message)
+  }
   return baseDir
 }
 

@@ -1,4 +1,5 @@
-import { mkdirSync, createWriteStream } from 'fs'
+import { mkdirSync, createWriteStream, readFileSync } from 'fs'
+import { Readable } from 'stream'
 import { extname, join, dirname } from 'path'
 import { spawn } from 'child_process'
 import { extract as tarExtract } from 'tar'
@@ -62,8 +63,7 @@ async function extractTarZst(archivePath: string, destDir: string): Promise<void
   }))
 
   return new Promise((resolve, reject) => {
-    const fs = require('fs')
-    const fileData = fs.readFileSync(archivePath)
+    const fileData = readFileSync(archivePath)
     const decompressed = ZstdCodecModule.decompress(new Uint8Array(fileData))
     const extract = tarStreamExtract()
 
@@ -90,7 +90,6 @@ async function extractTarZst(archivePath: string, destDir: string): Promise<void
     extract.on('error', reject)
 
     // Write decompressed data to extract stream
-    const { Readable } = require('stream')
     const readable = Readable.from(Buffer.from(decompressed))
     readable.pipe(extract)
   })

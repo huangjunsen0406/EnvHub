@@ -10,7 +10,7 @@ export interface LogEntry {
 export const useLogsStore = defineStore('logs', () => {
   const logs = ref<LogEntry[]>([])
 
-  function addLog(message: string, level: 'info' | 'warn' | 'error' = 'info') {
+  function addLog(message: string, level: 'info' | 'warn' | 'error' = 'info'): void {
     const timestamp = new Date().toLocaleTimeString()
     logs.value.push({
       timestamp,
@@ -19,16 +19,16 @@ export const useLogsStore = defineStore('logs', () => {
     })
   }
 
-  function clearLogs() {
+  function clearLogs(): void {
     logs.value = []
   }
 
   // 初始化时监听主进程的日志
-  function initLogListener() {
+  function initLogListener(): void {
     window.electron.ipcRenderer.on(
       'envhub:log',
-      (_event, data: { message: string; level?: string }) => {
-        addLog(data.message, (data.level as any) || 'info')
+      (_event: unknown, data: { message: string; level?: 'info' | 'warn' | 'error' }) => {
+        addLog(data.message, data.level ?? 'info')
       }
     )
   }

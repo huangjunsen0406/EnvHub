@@ -12,7 +12,7 @@ const tabs: { key: Tool; name: string; desc: string }[] = [
 const state = reactive({
   tab: 'python' as Tool,
   bundleDir: '',
-  manifest: null as any,
+  manifest: null as unknown,
   installed: { python: [], node: [], pg: [], current: {} as Record<string, string> } as any,
   wheelsRel: 'wheels',
   pnpmTgzRel: 'npm/pnpm.tgz',
@@ -21,16 +21,16 @@ const state = reactive({
 })
 
 const logs = ref('')
-function log(line: string) {
+function log(line: string): void {
   logs.value += line + '\n'
 }
 
-async function refreshInstalled() {
+async function refreshInstalled(): Promise<void> {
   const res = await window.electron.ipcRenderer.invoke('envhub:installed:list')
   state.installed = res
 }
 
-async function loadManifest() {
+async function loadManifest(): Promise<void> {
   if (!state.bundleDir) return
   state.manifest = await window.electron.ipcRenderer.invoke('envhub:manifest:load', {
     bundleDir: state.bundleDir
@@ -44,14 +44,14 @@ function versionsOf(tool: Tool): string[] {
 }
 
 function isInstalled(tool: Tool, v: string): boolean {
-  return (state.installed[tool] || []).some((x: any) => x.version === v)
+  return (state.installed[tool] || []).some((x: { version: string }) => x.version === v)
 }
 
 function isCurrent(tool: Tool, v: string): boolean {
   return state.installed.current?.[tool] === v
 }
 
-async function install(tool: Tool, v: string) {
+async function install(tool: Tool, v: string): Promise<void> {
   if (!state.bundleDir) {
     log('请先设置离线包目录')
     return
@@ -65,20 +65,20 @@ async function install(tool: Tool, v: string) {
   await refreshInstalled()
 }
 
-async function useVer(tool: Tool, v: string) {
+async function useVer(tool: Tool, v: string): Promise<void> {
   await window.electron.ipcRenderer.invoke('envhub:use', { tool, version: v })
   log(`${tool} 已切换到 ${v}`)
   await refreshInstalled()
 }
 
-async function uninstall(tool: Tool, v: string) {
+async function uninstall(tool: Tool, v: string): Promise<void> {
   await window.electron.ipcRenderer.invoke('envhub:uninstall', { tool, version: v })
   log(`${tool} ${v} 已卸载`)
   await refreshInstalled()
 }
 
 // 工具快捷操作
-async function installPyTools(v: string) {
+async function installPyTools(v: string): Promise<void> {
   await window.electron.ipcRenderer.invoke('envhub:python:installTools', {
     pythonVersion: v,
     bundleDir: state.bundleDir,
@@ -87,7 +87,7 @@ async function installPyTools(v: string) {
   log(`已为 Python ${v} 安装 pipx/uv`)
 }
 
-async function installPnpm(v: string) {
+async function installPnpm(v: string): Promise<void> {
   await window.electron.ipcRenderer.invoke('envhub:node:installPnpm', {
     nodeVersion: v,
     bundleDir: state.bundleDir,
@@ -96,7 +96,7 @@ async function installPnpm(v: string) {
   log(`已为 Node ${v} 安装 pnpm`)
 }
 
-async function pgInitStart(v: string) {
+async function pgInitStart(v: string): Promise<void> {
   const { dataDir } = await window.electron.ipcRenderer.invoke('envhub:pg:initStart', {
     pgVersion: v,
     cluster: state.cluster,
@@ -106,7 +106,7 @@ async function pgInitStart(v: string) {
   log(`PostgreSQL ${v} 已初始化并启动：${dataDir}`)
 }
 
-async function installPgVector(v: string) {
+async function installPgVector(v: string): Promise<void> {
   const pgMajor = v.split('.')[0]
   await window.electron.ipcRenderer.invoke('envhub:pg:installVector', {
     bundleDir: state.bundleDir,
@@ -120,7 +120,7 @@ let removeLogListener: (() => void) | null = null
 
 onMounted(() => {
   refreshInstalled()
-  const handler = (_: any, line: string) => log(line)
+  const handler = (_: unknown, line: string): void => log(line)
   window.electron.ipcRenderer.on('envhub:log', handler)
   removeLogListener = () => window.electron.ipcRenderer.removeListener('envhub:log', handler)
 })
@@ -149,7 +149,7 @@ onBeforeUnmount(() => {
       </div>
     </header>
 
-    <section class="tool-panel" v-if="state.tab === 'python'">
+    <section v-if="state.tab === 'python'" class="tool-panel">
       <h3>Python 版本</h3>
       <div class="list">
         <div class="row head">
@@ -158,7 +158,7 @@ onBeforeUnmount(() => {
           <div>操作</div>
           <div>工具</div>
         </div>
-        <div class="row" v-for="v in versionsOf('python')" :key="v">
+        <div v-for="v in versionsOf('python')" :key="v" class="row">
           <div>{{ v }}</div>
           <div>
             <span v-if="isInstalled('python', v)">已安装</span>
@@ -182,7 +182,7 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <section class="tool-panel" v-if="state.tab === 'node'">
+    <section v-if="state.tab === 'node'" class="tool-panel">
       <h3>Node.js 版本</h3>
       <div class="list">
         <div class="row head">
@@ -191,7 +191,7 @@ onBeforeUnmount(() => {
           <div>操作</div>
           <div>工具</div>
         </div>
-        <div class="row" v-for="v in versionsOf('node')" :key="v">
+        <div v-for="v in versionsOf('node')" :key="v" class="row">
           <div>{{ v }}</div>
           <div>
             <span v-if="isInstalled('node', v)">已安装</span>
@@ -215,7 +215,7 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <section class="tool-panel" v-if="state.tab === 'pg'">
+    <section v-if="state.tab === 'pg'" class="tool-panel">
       <h3>PostgreSQL 版本</h3>
       <div class="hints">
         集群名 <input v-model="state.cluster" style="width: 120px" /> 端口
@@ -228,7 +228,7 @@ onBeforeUnmount(() => {
           <div>操作</div>
           <div>扩展</div>
         </div>
-        <div class="row" v-for="v in versionsOf('pg')" :key="v">
+        <div v-for="v in versionsOf('pg')" :key="v" class="row">
           <div>{{ v }}</div>
           <div>
             <span v-if="isInstalled('pg', v)">已安装</span>

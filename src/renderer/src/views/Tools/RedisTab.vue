@@ -7,8 +7,8 @@ import {
   IconCodeBlock
 } from '@arco-design/web-vue/es/icon'
 import { Message } from '@arco-design/web-vue'
-import { useToolVersion } from '../composables/useToolVersion'
-import InstallProgressModal from './InstallProgressModal.vue'
+import { useToolVersion } from './composables/useToolVersion'
+import InstallProgressModal from './components/InstallProgressModal.vue'
 
 const {
   fetchingVersions,

@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import { onMounted } from 'vue'
 import { IconDelete, IconCloudDownload, IconRefresh } from '@arco-design/web-vue/es/icon'
-import { useToolVersion } from '../composables/useToolVersion'
-import InstallProgressModal from './InstallProgressModal.vue'
+import { useToolVersion } from './composables/useToolVersion'
+import InstallProgressModal from './components/InstallProgressModal.vue'
 
 const {
   fetchingVersions,
@@ -16,13 +17,17 @@ const {
   uninstall,
   installOnline,
   closeInstallProgress
-} = useToolVersion('node')
+} = useToolVersion('python')
 
 const columns = [
   { title: '版本', dataIndex: 'version', width: 150 },
   { title: '状态', slotName: 'status', width: 200 },
   { title: '操作', slotName: 'actions' }
 ]
+
+onMounted(() => {
+  // Tab 组件挂载时不自动加载，由父组件控制
+})
 </script>
 
 <template>
@@ -57,7 +62,7 @@ const columns = [
             v-if="!isInstalled(record.version)"
             type="primary"
             size="small"
-            :loading="installingVersions[`node-${record.version}`]"
+            :loading="installingVersions[`python-${record.version}`]"
             @click="installOnline(record.version, record.url)"
           >
             <template #icon>

@@ -9,12 +9,17 @@ export interface OnlineVersion {
   distribution?: string
 }
 
+export interface InstalledVersion {
+  version: string
+  [key: string]: unknown
+}
+
 export interface InstalledInfo {
-  python: any[]
-  node: any[]
-  pg: any[]
-  java: any[]
-  redis: any[]
+  python: InstalledVersion[]
+  node: InstalledVersion[]
+  pg: InstalledVersion[]
+  java: InstalledVersion[]
+  redis: InstalledVersion[]
   current: Record<string, string>
 }
 
@@ -66,7 +71,7 @@ export const useToolsStore = defineStore('tools', () => {
   async function fetchOnlineVersions(
     tool?: 'python' | 'node' | 'pg' | 'java' | 'redis',
     forceRefresh = false
-  ) {
+  ): Promise<void> {
     const tools = tool ? [tool] : (['python', 'node', 'pg', 'java', 'redis'] as const)
 
     // 并行请求所有需要加载的工具
@@ -92,7 +97,7 @@ export const useToolsStore = defineStore('tools', () => {
   }
 
   // 刷新已安装工具列表
-  async function refreshInstalled() {
+  async function refreshInstalled(): Promise<void> {
     try {
       const res = await window.electron.ipcRenderer.invoke('envhub:installed:list')
       installed.value = res
@@ -111,7 +116,7 @@ export const useToolsStore = defineStore('tools', () => {
   }
 
   // 加载已下载的安装包信息（从下载目录扫描）
-  async function loadDownloadedInstallers() {
+  async function loadDownloadedInstallers(): Promise<void> {
     try {
       const scanned = await window.electron.ipcRenderer.invoke('envhub:scanDownloadedInstallers')
       downloadedInstallers.value = scanned || { python: {}, pg: {} }

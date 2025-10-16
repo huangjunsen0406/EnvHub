@@ -1673,6 +1673,43 @@ app.whenReady().then(() => {
             `"${cliExe}" -p ${port} ${authParam} -n ${args.db} GET "${args.key}" 2>/dev/null`,
             { encoding: 'utf8' }
           ).trim()
+        } else if (typeOut === 'hash') {
+          // Hash 类型 - 格式：field1 value1 field2 value2
+          const hashOut = execSync(
+            `"${cliExe}" -p ${port} ${authParam} -n ${args.db} HGETALL "${args.key}" 2>/dev/null`,
+            { encoding: 'utf8' }
+          ).trim()
+          value = hashOut.split('\n').join(' ')
+        } else if (typeOut === 'list') {
+          // List 类型 - 格式：value1 value2 value3
+          const listOut = execSync(
+            `"${cliExe}" -p ${port} ${authParam} -n ${args.db} LRANGE "${args.key}" 0 -1 2>/dev/null`,
+            { encoding: 'utf8' }
+          ).trim()
+          value = listOut.split('\n').join(' ')
+        } else if (typeOut === 'set') {
+          // Set 类型 - 格式：member1 member2 member3
+          const setOut = execSync(
+            `"${cliExe}" -p ${port} ${authParam} -n ${args.db} SMEMBERS "${args.key}" 2>/dev/null`,
+            { encoding: 'utf8' }
+          ).trim()
+          value = setOut.split('\n').join(' ')
+        } else if (typeOut === 'zset') {
+          // Sorted Set 类型 - 格式：score1 member1 score2 member2
+          const zsetOut = execSync(
+            `"${cliExe}" -p ${port} ${authParam} -n ${args.db} ZRANGE "${args.key}" 0 -1 WITHSCORES 2>/dev/null`,
+            { encoding: 'utf8' }
+          ).trim()
+          // Redis 返回格式是每行一个元素（member/score交替）
+          const lines = zsetOut.split('\n')
+          const pairs: string[] = []
+          for (let i = 0; i < lines.length; i += 2) {
+            if (i + 1 < lines.length) {
+              // score member（与 ZADD 的顺序一致）
+              pairs.push(lines[i + 1], lines[i])
+            }
+          }
+          value = pairs.join(' ')
         }
 
         return {

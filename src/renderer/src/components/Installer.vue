@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { reactive, ref, onMounted, onBeforeUnmount } from 'vue'
 
-type Manifest = Record<string, any>
+type Manifest = Record<string, unknown>
 
 const state = reactive({
   bundleDir: '',
@@ -28,11 +28,11 @@ const state = reactive({
 const logs = ref('')
 let removeLogListener: (() => void) | null = null
 
-function appendLog(line: string) {
+function appendLog(line: string): void {
   logs.value += line + '\n'
 }
 
-async function loadManifest() {
+async function loadManifest(): Promise<void> {
   if (!state.bundleDir) return
   try {
     const manifest = await window.electron.ipcRenderer.invoke('envhub:manifest:load', {
@@ -47,12 +47,12 @@ async function loadManifest() {
     state.pgVersion = state.pgVersion || pgVers[0] || ''
     state.pgMajor = state.pgMajor || state.pgVersion.split('.')[0] || ''
     appendLog('Manifest 已加载')
-  } catch (e: any) {
-    appendLog('加载 manifest 失败: ' + e.message)
+  } catch (e: unknown) {
+    appendLog('加载 manifest 失败: ' + (e as Error).message)
   }
 }
 
-async function runInstall() {
+async function runInstall(): Promise<void> {
   if (!state.bundleDir) {
     appendLog('请先填写离线包目录')
     return
@@ -127,13 +127,12 @@ async function runInstall() {
       }
     }
     appendLog('全部完成 ✅')
-  } catch (e: any) {
-    appendLog('安装失败: ' + e.message)
+  } catch (e: unknown) {
+    appendLog('安装失败: ' + (e as Error).message)
   }
 }
-
 onMounted(() => {
-  const handler = (_: any, line: string) => {
+  const handler = (_: unknown, line: string): void => {
     appendLog(line)
   }
   window.electron.ipcRenderer.on('envhub:log', handler)

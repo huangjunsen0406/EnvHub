@@ -40,7 +40,11 @@ async function loadStatus(): Promise<void> {
   }
 }
 
-function parseRedisInfo(info: string) {
+function parseRedisInfo(info: string): {
+  key: string
+  value: string
+  description: string
+}[] {
   const lines = info.split('\n')
   const result: Array<{ key: string; value: string; description: string }> = []
 

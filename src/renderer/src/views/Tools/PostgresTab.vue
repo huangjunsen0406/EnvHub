@@ -11,8 +11,8 @@ import {
   IconImport
 } from '@arco-design/web-vue/es/icon'
 import { Message, Modal } from '@arco-design/web-vue'
-import { useToolVersion } from '../composables/useToolVersion'
-import InstallProgressModal from './InstallProgressModal.vue'
+import { useToolVersion } from './composables/useToolVersion'
+import InstallProgressModal from './components/InstallProgressModal.vue'
 
 const {
   fetchingVersions,
@@ -208,8 +208,10 @@ async function handleDeleteDatabase(dbName: string): Promise<void> {
     const message = error instanceof Error ? error.message : '未知错误'
 
     // 检测是否是数据库被占用的错误
-    if (message.includes('is being accessed by other users') ||
-        message.includes('other session using the database')) {
+    if (
+      message.includes('is being accessed by other users') ||
+      message.includes('other session using the database')
+    ) {
       Message.warning({
         content: `无法删除数据库 ${dbName}：数据库正在被其他会话访问，请先关闭所有数据库客户端（如 Navicat、DBeaver、pgAdmin 等）的连接后重试`,
         duration: 5000
@@ -280,7 +282,7 @@ async function handleBackup(dbName: string, username: string, password: string):
     showBackupLogModal.value = true
 
     // 监听备份日志
-    const logListener = (_evt: unknown, message: string) => {
+    const logListener = (_evt: unknown, message: string): void => {
       backupLogContent.value += message
     }
     window.electron.ipcRenderer.on('envhub:pg:backup:log', logListener)
@@ -345,7 +347,7 @@ async function handleRestore(dbName: string, username: string, password: string)
     showBackupLogModal.value = true
 
     // 监听导入日志
-    const logListener = (_evt: unknown, message: string) => {
+    const logListener = (_evt: unknown, message: string): void => {
       backupLogContent.value += message
     }
     window.electron.ipcRenderer.on('envhub:pg:restore:log', logListener)
@@ -404,12 +406,7 @@ onMounted(() => {
       >
         数据库管理
       </a-button>
-      <a-button
-        type="outline"
-        size="small"
-        :loading="fetchingVersions"
-        @click="refreshVersions()"
-      >
+      <a-button type="outline" size="small" :loading="fetchingVersions" @click="refreshVersions()">
         <template #icon>
           <icon-refresh />
         </template>
@@ -419,7 +416,6 @@ onMounted(() => {
 
     <!-- 版本管理 -->
     <div v-if="state.activeTab === 'versions'" class="w-full">
-
       <a-table
         :columns="[
           { title: '版本', dataIndex: 'version', width: 150 },
@@ -434,10 +430,15 @@ onMounted(() => {
             <a-tag v-if="isInstalled(record.version)" color="green">已安装</a-tag>
             <a-tag v-else color="gray">未安装</a-tag>
             <a-tag v-if="isCurrent(record.version)" color="blue">当前版本</a-tag>
-            <a-tag v-if="isCurrent(record.version) && pgStatus[record.version]?.running" color="arcoblue">
+            <a-tag
+              v-if="isCurrent(record.version) && pgStatus[record.version]?.running"
+              color="arcoblue"
+            >
               运行中 PID:{{ pgStatus[record.version].pid }} 端口:{{ pgStatus[record.version].port }}
             </a-tag>
-            <a-tag v-else-if="isCurrent(record.version) && isInstalled(record.version)" color="gray">已停止</a-tag>
+            <a-tag v-else-if="isCurrent(record.version) && isInstalled(record.version)" color="gray"
+              >已停止</a-tag
+            >
             <a-tag v-if="record.date" color="arcoblue">
               {{ new Date(record.date).toLocaleDateString() }}
             </a-tag>
@@ -650,7 +651,9 @@ onMounted(() => {
       :footer="false"
       width="800px"
     >
-      <div class="bg-gray-900 text-green-400 p-4 rounded font-mono text-sm max-h-96 overflow-y-auto whitespace-pre-wrap">
+      <div
+        class="bg-gray-900 text-green-400 p-4 rounded font-mono text-sm max-h-96 overflow-y-auto whitespace-pre-wrap"
+      >
         {{ backupLogContent || '等待日志输出...' }}
       </div>
       <template #footer>

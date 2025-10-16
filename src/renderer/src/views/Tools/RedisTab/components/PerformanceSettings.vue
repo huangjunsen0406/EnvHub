@@ -55,8 +55,7 @@ async function loadConfig(): Promise<void> {
         case 'requirepass':
           form.value.requirepass = value
           break
-        case 'maxmemory':
-          // 解析 maxmemory，可能是 "100mb" 或 "0"
+        case 'maxmemory': {
           const memMatch = value.match(/^(\d+)(mb|gb|kb)?$/i)
           if (memMatch) {
             let memValue = parseInt(memMatch[1])
@@ -68,6 +67,7 @@ async function loadConfig(): Promise<void> {
             form.value.maxmemory = 0
           }
           break
+        }
       }
     }
   } catch (error: unknown) {

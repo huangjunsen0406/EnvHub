@@ -1,4 +1,4 @@
-import { mkdirSync } from 'fs'
+import { mkdirSync, readdirSync, existsSync, renameSync, rmSync } from 'fs'
 import { join } from 'path'
 import { DetectedPlatform } from '../platform'
 import { toolchainRoot } from '../paths'
@@ -18,8 +18,6 @@ export async function installJava(
   const baseDir = toolchainRoot('java', opts.version, opts.platform)
   mkdirSync(baseDir, { recursive: true })
 
-  const fs = require('fs') as typeof import('fs')
-
   // 解压到临时目录
   const tempExtractDir = join(baseDir, 'temp_extract')
   mkdirSync(tempExtractDir, { recursive: true })
@@ -30,7 +28,7 @@ export async function installJava(
   // - jdk-21.0.1+12 (通用格式)
   // - jdk-21.0.1 (简化格式)
   // - temurin-21.0.1+12 (Temurin)
-  const entries = fs.readdirSync(tempExtractDir)
+  const entries = readdirSync(tempExtractDir)
   let jdkDir = entries.find((e) => e.match(/^(jdk|temurin|zulu|graalvm|liberica|corretto)/i))
 
   // 如果没找到预期目录，检查是否直接解压到了根目录
@@ -49,14 +47,14 @@ export async function installJava(
     let sourcePath = extractedPath
     if (process.platform === 'darwin') {
       const contentsHome = join(extractedPath, 'Contents', 'Home')
-      if (fs.existsSync(contentsHome)) {
+      if (existsSync(contentsHome)) {
         sourcePath = contentsHome
       } else {
         // 检查其他可能的嵌套结构（如 jdk-21.0.1.jdk/Contents/Home）
         const jdkBundle = entries.find((e) => e.endsWith('.jdk'))
         if (jdkBundle) {
           const bundleHome = join(tempExtractDir, jdkBundle, 'Contents', 'Home')
-          if (fs.existsSync(bundleHome)) {
+          if (existsSync(bundleHome)) {
             sourcePath = bundleHome
           }
         }
@@ -64,29 +62,29 @@ export async function installJava(
     }
 
     // 移动文件
-    const files = fs.readdirSync(sourcePath)
+    const files = readdirSync(sourcePath)
     for (const file of files) {
       const src = join(sourcePath, file)
       const dest = join(baseDir, file)
-      if (fs.existsSync(dest)) {
-        fs.rmSync(dest, { recursive: true, force: true })
+      if (existsSync(dest)) {
+        rmSync(dest, { recursive: true, force: true })
       }
-      fs.renameSync(src, dest)
+      renameSync(src, dest)
     }
   } else {
     // 根目录解压，直接移动所有文件
     for (const entry of entries) {
       const src = join(tempExtractDir, entry)
       const dest = join(baseDir, entry)
-      if (fs.existsSync(dest)) {
-        fs.rmSync(dest, { recursive: true, force: true })
+      if (existsSync(dest)) {
+        rmSync(dest, { recursive: true, force: true })
       }
-      fs.renameSync(src, dest)
+      renameSync(src, dest)
     }
   }
 
   // 清理临时目录
-  fs.rmSync(tempExtractDir, { recursive: true, force: true })
+  rmSync(tempExtractDir, { recursive: true, force: true })
 
   // macOS 移除隔离属性
   if (process.platform === 'darwin') {

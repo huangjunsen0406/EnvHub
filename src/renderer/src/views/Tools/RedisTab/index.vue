@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { IconRefresh } from '@arco-design/web-vue/es/icon'
-import { useToolVersion } from '../../composables/useToolVersion'
+import { useToolVersion } from '../composables/useToolVersion'
 import VersionManager from './components/VersionManager.vue'
 import PerformanceSettings from './components/PerformanceSettings.vue'
 import ConfigEditor from './components/ConfigEditor.vue'

@@ -1,4 +1,4 @@
-import { mkdirSync } from 'fs'
+import { mkdirSync, readdirSync, existsSync, rmSync, renameSync } from 'fs'
 import { join } from 'path'
 import { DetectedPlatform } from '../platform'
 import { toolchainRoot } from '../paths'
@@ -20,7 +20,6 @@ export async function installNode(
   const baseDir = toolchainRoot('node', opts.version, opts.platform)
   mkdirSync(baseDir, { recursive: true })
 
-  const fs = require('fs') as typeof import('fs')
   const archivePath = join(opts.bundleDir, opts.artifact.file)
 
   // 解压到临时目录
@@ -30,25 +29,25 @@ export async function installNode(
 
   // Node.js 官方压缩包解压后会有一个 node-vX.X.X-platform 目录
   // 需要找到这个目录并移动内容到 baseDir
-  const entries = fs.readdirSync(tempExtractDir)
+  const entries = readdirSync(tempExtractDir)
   const nodeDir = entries.find((e) => e.startsWith('node-v'))
 
   if (nodeDir) {
     // 移动内容
     const extractedPath = join(tempExtractDir, nodeDir)
-    const files = fs.readdirSync(extractedPath)
+    const files = readdirSync(extractedPath)
     for (const file of files) {
       const src = join(extractedPath, file)
       const dest = join(baseDir, file)
-      if (fs.existsSync(dest)) {
-        fs.rmSync(dest, { recursive: true, force: true })
+      if (existsSync(dest)) {
+        rmSync(dest, { recursive: true, force: true })
       }
-      fs.renameSync(src, dest)
+      renameSync(src, dest)
     }
   }
 
   // 清理临时目录
-  fs.rmSync(tempExtractDir, { recursive: true, force: true })
+  rmSync(tempExtractDir, { recursive: true, force: true })
 
   await removeQuarantineAttr(baseDir)
 
@@ -91,10 +90,9 @@ export async function installPnpmFromTgz(opts: PnpmInstallOptions): Promise<stri
 
   // Guess entrypoint
   let entry = join(toolsDir, 'package', 'dist', 'pnpm.cjs')
-  const fs = require('fs') as typeof import('fs')
-  if (!fs.existsSync(entry)) {
+  if (!existsSync(entry)) {
     const alt = join(toolsDir, 'package', 'bin', 'pnpm.cjs')
-    if (fs.existsSync(alt)) entry = alt
+    if (existsSync(alt)) entry = alt
   }
 
   // Create shim that invokes node entry cjs

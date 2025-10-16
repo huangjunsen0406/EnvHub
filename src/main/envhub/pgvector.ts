@@ -1,4 +1,4 @@
-import { copyFileSync, mkdirSync } from 'fs'
+import { copyFileSync, mkdirSync, readdirSync } from 'fs'
 import { join } from 'path'
 import { ArtifactRef } from './manifest'
 import { extractArchive, removeQuarantineAttr } from './extract'
@@ -24,8 +24,7 @@ export async function installPgVector(opts: PgVectorInstallOptions): Promise<voi
   mkdirSync(extDst, { recursive: true })
 
   // Shallow copy expected files
-  const fs = require('fs') as typeof import('fs')
-  for (const f of fs.readdirSync(libSrc)) {
+  for (const f of readdirSync(libSrc)) {
     if (
       f.startsWith('vector.') ||
       f === 'vector.so' ||
@@ -35,7 +34,7 @@ export async function installPgVector(opts: PgVectorInstallOptions): Promise<voi
       copyFileSync(join(libSrc, f), join(libDst, f))
     }
   }
-  for (const f of fs.readdirSync(extSrc)) {
+  for (const f of readdirSync(extSrc)) {
     if (f.startsWith('vector')) {
       copyFileSync(join(extSrc, f), join(extDst, f))
     }

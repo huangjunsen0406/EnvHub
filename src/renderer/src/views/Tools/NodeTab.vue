@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { IconDelete, IconCloudDownload, IconRefresh } from '@arco-design/web-vue/es/icon'
-import { useToolVersion } from '../composables/useToolVersion'
-import InstallProgressModal from './InstallProgressModal.vue'
+import { useToolVersion } from './composables/useToolVersion'
+import InstallProgressModal from './components/InstallProgressModal.vue'
 
 const {
   fetchingVersions,
@@ -16,7 +16,7 @@ const {
   uninstall,
   installOnline,
   closeInstallProgress
-} = useToolVersion('java')
+} = useToolVersion('node')
 
 const columns = [
   { title: '版本', dataIndex: 'version', width: 150 },
@@ -46,7 +46,6 @@ const columns = [
           <a-tag v-if="isInstalled(record.version)" color="green">已安装</a-tag>
           <a-tag v-else color="gray">未安装</a-tag>
           <a-tag v-if="isCurrent(record.version)" color="blue">当前版本</a-tag>
-          <a-tag v-if="record.lts" color="orange">LTS</a-tag>
           <a-tag v-if="record.date" color="arcoblue">
             {{ new Date(record.date).toLocaleDateString() }}
           </a-tag>
@@ -58,7 +57,7 @@ const columns = [
             v-if="!isInstalled(record.version)"
             type="primary"
             size="small"
-            :loading="installingVersions[`java-${record.version}`]"
+            :loading="installingVersions[`node-${record.version}`]"
             @click="installOnline(record.version, record.url)"
           >
             <template #icon>
