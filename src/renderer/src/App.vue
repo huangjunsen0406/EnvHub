@@ -2,14 +2,16 @@
 import { ref, onMounted } from 'vue'
 import {
   IconDashboard,
-  IconCodeSquare,
+  IconCode,
+  IconStorage,
   IconSettings,
   IconBook,
   IconMenuFold,
   IconMenuUnfold
 } from '@arco-design/web-vue/es/icon'
 import Dashboard from './views/Dashboard.vue'
-import Tools from './views/Tools/index.vue'
+import Languages from './views/Languages.vue'
+import Databases from './views/Databases.vue'
 import Settings from './views/Settings.vue'
 import Logs from './views/Logs.vue'
 import { useLogsStore } from './store/logs'
@@ -21,7 +23,8 @@ const collapsed = ref(false)
 
 const menuItems = [
   { key: 'dashboard', label: '仪表盘', icon: IconDashboard },
-  { key: 'tools', label: '工具管理', icon: IconCodeSquare },
+  { key: 'languages', label: '编程语言', icon: IconCode },
+  { key: 'databases', label: '数据库', icon: IconStorage },
   { key: 'logs', label: '日志', icon: IconBook },
   { key: 'settings', label: '设置', icon: IconSettings }
 ]
@@ -96,7 +99,8 @@ onMounted(() => {
       <a-layout-content class="bg-gray-100 overflow-auto">
         <div class="p-6 min-h-[calc(100vh-60px)]">
           <Dashboard v-if="currentView === 'dashboard'" />
-          <Tools v-else-if="currentView === 'tools'" />
+          <Languages v-else-if="currentView === 'languages'" />
+          <Databases v-else-if="currentView === 'databases'" />
           <Logs v-else-if="currentView === 'logs'" />
           <Settings v-else-if="currentView === 'settings'" />
         </div>
