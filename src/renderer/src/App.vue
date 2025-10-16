@@ -34,20 +34,22 @@ onMounted(() => {
 </script>
 
 <template>
-  <a-layout class="layout-container">
+  <a-layout class="h-screen bg-gray-100">
     <a-layout-sider
       :collapsed="collapsed"
       :width="220"
       :collapsed-width="60"
-      class="layout-sider"
+      class="bg-white shadow-[2px_0_8px_rgba(0,0,0,0.05)]"
       breakpoint="lg"
       @collapse="collapsed = $event"
     >
-      <div class="sider-container">
-        <div class="sider-top">
-          <div class="logo">
-            <span v-if="!collapsed" class="logo-text">EnvHub</span>
-            <span v-else class="logo-icon">E</span>
+      <div class="flex flex-col h-full">
+        <div class="flex-1 overflow-y-auto">
+          <div
+            class="h-[60px] flex items-center justify-center border-b border-gray-200 font-semibold text-xl text-[#165dff]"
+          >
+            <span v-if="!collapsed" class="tracking-wider">EnvHub</span>
+            <span v-else class="text-2xl font-bold">E</span>
           </div>
           <a-menu
             :selected-keys="[currentView]"
@@ -63,12 +65,8 @@ onMounted(() => {
           </a-menu>
         </div>
 
-        <div class="sider-bottom">
-          <a-button
-            type="text"
-            :style="{ width: '100%', height: '48px' }"
-            @click="collapsed = !collapsed"
-          >
+        <div class="border-t border-gray-200 p-2">
+          <a-button type="text" class="w-full h-12" @click="collapsed = !collapsed">
             <template #icon>
               <icon-menu-fold v-if="!collapsed" />
               <icon-menu-unfold v-else />
@@ -80,21 +78,23 @@ onMounted(() => {
     </a-layout-sider>
 
     <a-layout>
-      <a-layout-header class="layout-header">
-        <div class="header-left">
-          <span class="header-title">{{
+      <a-layout-header
+        class="h-[60px] bg-white border-b border-gray-200 flex items-center justify-between px-6"
+      >
+        <div class="flex items-center gap-4">
+          <span class="text-base font-medium text-[#1d2129]">{{
             menuItems.find((m) => m.key === currentView)?.label
           }}</span>
         </div>
-        <div class="header-right">
+        <div class="flex items-center">
           <a-space>
             <a-tag color="green" size="small">v1.0.0</a-tag>
           </a-space>
         </div>
       </a-layout-header>
 
-      <a-layout-content class="layout-content">
-        <div class="content-wrapper">
+      <a-layout-content class="bg-gray-100 overflow-auto">
+        <div class="p-6 min-h-[calc(100vh-60px)]">
           <Dashboard v-if="currentView === 'dashboard'" />
           <Tools v-else-if="currentView === 'tools'" />
           <Logs v-else-if="currentView === 'logs'" />
@@ -104,88 +104,3 @@ onMounted(() => {
     </a-layout>
   </a-layout>
 </template>
-
-<style scoped>
-.layout-container {
-  height: 100vh;
-  background: #f5f5f5;
-}
-
-.layout-sider {
-  background: #fff;
-  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.05);
-}
-
-.sider-container {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-}
-
-.sider-top {
-  flex: 1;
-  overflow-y: auto;
-}
-
-.sider-bottom {
-  border-top: 1px solid #f0f0f0;
-  padding: 8px;
-}
-
-.logo {
-  height: 60px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-bottom: 1px solid #f0f0f0;
-  font-weight: 600;
-  font-size: 20px;
-  color: #165dff;
-}
-
-.logo-text {
-  letter-spacing: 1px;
-}
-
-.logo-icon {
-  font-size: 24px;
-  font-weight: bold;
-}
-
-.layout-header {
-  height: 60px;
-  background: #fff;
-  border-bottom: 1px solid #f0f0f0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 24px;
-}
-
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.header-title {
-  font-size: 16px;
-  font-weight: 500;
-  color: #1d2129;
-}
-
-.header-right {
-  display: flex;
-  align-items: center;
-}
-
-.layout-content {
-  background: #f5f5f5;
-  overflow: auto;
-}
-
-.content-wrapper {
-  padding: 24px;
-  min-height: calc(100vh - 60px);
-}
-</style>

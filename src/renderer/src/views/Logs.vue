@@ -49,7 +49,7 @@ watch(
 </script>
 
 <template>
-  <div class="logs-page">
+  <div class="max-w-[1400px] mx-auto">
     <a-card :bordered="false">
       <template #title>
         <a-space>
@@ -59,7 +59,7 @@ watch(
       </template>
       <template #extra>
         <a-space>
-          <a-input v-model="filter" placeholder="过滤日志..." allow-clear style="width: 200px">
+          <a-input v-model="filter" placeholder="过滤日志..." allow-clear class="w-[200px]">
             <template #prefix>
               <icon-search />
             </template>
@@ -87,12 +87,22 @@ watch(
         </a-space>
       </template>
 
-      <div class="log-container">
-        <div v-if="filteredLogs.length === 0" class="log-empty">
+      <div class="min-h-[500px] max-h-[calc(100vh-280px)]">
+        <div
+          v-if="filteredLogs.length === 0"
+          class="flex items-center justify-center min-h-[500px]"
+        >
           <a-empty description="暂无日志" />
         </div>
-        <div v-else class="log-content">
-          <div v-for="(log, index) in filteredLogs" :key="index" class="log-line">
+        <div
+          v-else
+          class="bg-[#1d1d1d] text-[#d4d4d4] p-4 rounded font-mono text-[13px] leading-relaxed overflow-y-auto max-h-[calc(100vh-280px)]"
+        >
+          <div
+            v-for="(log, index) in filteredLogs"
+            :key="index"
+            class="mb-1 break-all hover:bg-white/5"
+          >
             [{{ log.timestamp }}] {{ log.message }}
           </div>
         </div>
@@ -100,44 +110,3 @@ watch(
     </a-card>
   </div>
 </template>
-
-<style scoped>
-.logs-page {
-  max-width: 1400px;
-  margin: 0 auto;
-}
-
-.log-container {
-  min-height: 500px;
-  max-height: calc(100vh - 280px);
-}
-
-.log-content {
-  background: #1d1d1d;
-  color: #d4d4d4;
-  padding: 16px;
-  border-radius: 4px;
-  font-family:
-    'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
-  font-size: 13px;
-  line-height: 1.6;
-  overflow-y: auto;
-  max-height: calc(100vh - 280px);
-}
-
-.log-line {
-  margin-bottom: 4px;
-  word-break: break-all;
-}
-
-.log-line:hover {
-  background: rgba(255, 255, 255, 0.05);
-}
-
-.log-empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 500px;
-}
-</style>

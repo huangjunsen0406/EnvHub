@@ -3,7 +3,7 @@
 </script>
 
 <template>
-  <div class="settings-page">
+  <div class="max-w-[900px] mx-auto">
     <a-card title="关于" :bordered="false">
       <a-descriptions :column="2" bordered>
         <a-descriptions-item label="应用名称">EnvHub</a-descriptions-item>
@@ -18,10 +18,3 @@
     </a-card>
   </div>
 </template>
-
-<style scoped>
-.settings-page {
-  max-width: 900px;
-  margin: 0 auto;
-}
-</style>
