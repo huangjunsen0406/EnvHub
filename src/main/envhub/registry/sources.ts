@@ -736,11 +736,12 @@ export async function fetchMysqlVersions(
 
     // MySQL 支持的版本列表（按 major.minor 分组）
     const mysqlVersions = [
+      { version: '9.4.0', major: '9.4', date: '2025-01-14' }, // Innovation Release
       { version: '9.1.0', major: '9.1', date: '2024-11-01' },
       { version: '9.0.1', major: '9.0', date: '2024-10-15' },
-      { version: '9.0.0', major: '9.0', date: '2024-07-01' },
+      { version: '8.4.6', major: '8.4', date: '2025-01-14' }, // LTS Release
       { version: '8.4.3', major: '8.4', date: '2024-10-14' },
-      { version: '8.4.0', major: '8.4', date: '2024-04-30' },
+      { version: '8.0.43', major: '8.0', date: '2025-01-14' }, // LTS Release
       { version: '8.0.40', major: '8.0', date: '2024-10-01' },
       { version: '8.0.39', major: '8.0', date: '2024-07-01' }
     ]
@@ -767,19 +768,27 @@ export async function fetchMysqlVersions(
  * 构建 MySQL 下载链接
  */
 function buildMysqlUrl(version: string, major: string, platform: DetectedPlatform): string {
-  const baseUrl = 'https://cdn.mysql.com//Downloads'
+  const baseUrl = 'https://cdn.mysql.com/Downloads' // 修正双斜杠问题
 
   let osArch: string
+  let extension: string
+
   if (platform.platformKey === 'darwin-arm64') {
     osArch = 'macos14-arm64'
+    extension = 'tar.gz'
   } else if (platform.platformKey === 'darwin-x64') {
     osArch = 'macos14-x86_64'
+    extension = 'tar.gz'
   } else if (platform.platformKey.includes('linux')) {
     osArch = 'linux-glibc2.28-x86_64'
+    extension = 'tar.gz'
+  } else if (platform.platformKey === 'win-x64') {
+    osArch = 'winx64'
+    extension = 'zip'
   } else {
-    // Windows 暂不支持
+    // 不支持的平台
     return ''
   }
 
-  return `${baseUrl}/MySQL-${major}/mysql-${version}-${osArch}.tar.gz`
+  return `${baseUrl}/MySQL-${major}/mysql-${version}-${osArch}.${extension}`
 }

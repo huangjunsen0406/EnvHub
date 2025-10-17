@@ -12,6 +12,7 @@ const languages = ref([
 
 const databases = ref([
   { name: 'PostgreSQL', current: '-', installed: 0, icon: '🐘', key: 'pg' },
+  { name: 'MySQL', current: '-', installed: 0, icon: '🛢️', key: 'mysql' },
   { name: 'Redis', current: '-', installed: 0, icon: '🔴', key: 'redis' }
 ])
 
@@ -31,10 +32,15 @@ onMounted(async () => {
   languages.value[2].current = installed.current?.java || '-'
 
   // 更新数据库状态
+  // PostgreSQL
   databases.value[0].installed = installed.pg?.length || 0
   databases.value[0].current = installed.current?.pg || '-'
-  databases.value[1].installed = installed.redis?.length || 0
-  databases.value[1].current = installed.current?.redis || '-'
+  // MySQL
+  databases.value[1].installed = installed.mysql?.length || 0
+  databases.value[1].current = installed.current?.mysql || '-'
+  // Redis
+  databases.value[2].installed = installed.redis?.length || 0
+  databases.value[2].current = installed.current?.redis || '-'
 })
 </script>
 
@@ -85,7 +91,7 @@ onMounted(async () => {
             <a-tag color="purple">{{ databases.length }} 个工具</a-tag>
           </template>
           <a-row :gutter="16">
-            <a-col v-for="db in databases" :key="db.key" :xs="24" :sm="12" :md="12" :lg="12">
+            <a-col v-for="db in databases" :key="db.key" :xs="24" :sm="12" :md="8" :lg="8">
               <a-card :bordered="false" hoverable class="mb-4 bg-gray-50">
                 <div class="p-2">
                   <div class="flex items-center gap-3 mb-3">

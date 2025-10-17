@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import { IconDelete, IconCloudDownload, IconRefresh } from '@arco-design/web-vue/es/icon'
 import { useToolVersion } from './composables/useToolVersion'
 import InstallProgressModal from './components/InstallProgressModal.vue'
 
@@ -20,9 +19,9 @@ const {
 } = useToolVersion('node')
 
 const columns = [
-  { title: '版本', dataIndex: 'version', width: 150 },
-  { title: '状态', slotName: 'status', width: 200 },
-  { title: '操作', slotName: 'actions' }
+  { title: '版本', dataIndex: 'version', width: 150, align: 'center' },
+  { title: '状态', slotName: 'status', width: 200, align: 'center' },
+  { title: '操作', slotName: 'actions', align: 'center' }
 ]
 
 // 操作状态追踪 - 按版本追踪而不是全局状态
@@ -67,9 +66,6 @@ async function unsetNodeCurrent(): Promise<void> {
   <div class="w-full">
     <div class="mb-4">
       <a-button type="outline" size="small" :loading="fetchingVersions" @click="refreshVersions()">
-        <template #icon>
-          <icon-refresh />
-        </template>
         刷新版本列表
       </a-button>
     </div>
@@ -77,7 +73,7 @@ async function unsetNodeCurrent(): Promise<void> {
     <a-table
       :columns="columns"
       :data="onlineVersions"
-      :pagination="{ pageSize: 20, showTotal: true }"
+      :pagination="{ pageSize: 10, showTotal: true }"
     >
       <template #status="{ record }">
         <a-space>
@@ -98,9 +94,6 @@ async function unsetNodeCurrent(): Promise<void> {
             :loading="installingVersions[`node-${record.version}`]"
             @click="installOnline(record.version, record.url)"
           >
-            <template #icon>
-              <icon-cloud-download />
-            </template>
             安装
           </a-button>
           <a-button
@@ -130,9 +123,6 @@ async function unsetNodeCurrent(): Promise<void> {
               status="danger"
               size="small"
             >
-              <template #icon>
-                <icon-delete />
-              </template>
               卸载
             </a-button>
           </a-popconfirm>

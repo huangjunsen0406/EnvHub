@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { IconRefresh } from '@arco-design/web-vue/es/icon'
 import { useToolVersion } from '../composables/useToolVersion'
 import VersionManager from './components/VersionManager.vue'
 import PerformanceSettings from './components/PerformanceSettings.vue'
@@ -74,9 +73,6 @@ const currentVersion = computed(() => {
         持久化设置
       </a-button>
       <a-button type="outline" size="small" :loading="fetchingVersions" @click="refreshVersions()">
-        <template #icon>
-          <icon-refresh />
-        </template>
         刷新版本列表
       </a-button>
     </div>

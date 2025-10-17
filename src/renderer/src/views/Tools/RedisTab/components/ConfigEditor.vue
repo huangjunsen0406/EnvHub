@@ -49,12 +49,6 @@ onMounted(() => {
 
 <template>
   <div class="w-full">
-    <div class="mb-4">
-      <a-alert type="info">
-        提示: Ctrl+F 搜索关键字，Ctrl+G 查找下一个，Ctrl+S 保存，Ctrl+Shift+R 查找替换!
-      </a-alert>
-    </div>
-
     <a-textarea
       v-model="configContent"
       :auto-size="{ minRows: 20, maxRows: 40 }"

@@ -67,7 +67,7 @@ export async function grantPrivileges(
 ): Promise<void> {
   const mysqlBin = process.platform === 'win32' ? join(binDir, 'mysql.exe') : join(binDir, 'mysql')
 
-  const privs = privileges.includes('ALL') ? 'ALL PRIVILEGES' : privileges.join(', ')
+  const privs = privileges.includes('ALL PRIVILEGES') ? 'ALL PRIVILEGES' : privileges.join(', ')
   const sql = `GRANT ${privs} ON \`${database}\`.* TO '${username}'@'${host}';`
 
   logInfo(`Granting ${privs} on ${database} to ${username}@${host}`)
@@ -88,7 +88,7 @@ export async function revokePrivileges(
 ): Promise<void> {
   const mysqlBin = process.platform === 'win32' ? join(binDir, 'mysql.exe') : join(binDir, 'mysql')
 
-  const privs = privileges.includes('ALL') ? 'ALL PRIVILEGES' : privileges.join(', ')
+  const privs = privileges.includes('ALL PRIVILEGES') ? 'ALL PRIVILEGES' : privileges.join(', ')
   const sql = `REVOKE ${privs} ON \`${database}\`.* FROM '${username}'@'${host}';`
 
   logInfo(`Revoking ${privs} on ${database} from ${username}@${host}`)
@@ -136,7 +136,7 @@ function parseGrants(output: string): GrantInfo[] {
       // 解析权限列表
       let privileges: string[]
       if (privsStr.includes('ALL PRIVILEGES')) {
-        privileges = ['ALL']
+        privileges = ['ALL PRIVILEGES']
       } else {
         privileges = privsStr.split(',').map((p) => p.trim())
       }
@@ -159,7 +159,7 @@ export async function getUserDatabases(
   socketPath: string,
   username: string,
   host: string
-): Promise<string[]> {
+): Promise<GrantInfo[]> {
   const grants = await showGrants(binDir, socketPath, username, host)
-  return grants.map((g) => g.database)
+  return grants
 }

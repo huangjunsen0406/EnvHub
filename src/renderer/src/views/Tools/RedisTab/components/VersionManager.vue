@@ -1,11 +1,5 @@
 <script setup lang="ts">
 import { ref, onMounted, watch } from 'vue'
-import {
-  IconDelete,
-  IconCloudDownload,
-  IconRefresh,
-  IconCodeBlock
-} from '@arco-design/web-vue/es/icon'
 import { Message } from '@arco-design/web-vue'
 import { useToolVersion } from '../../composables/useToolVersion'
 import { useLogsStore } from '../../../../store/logs'
@@ -25,9 +19,9 @@ const {
 } = useToolVersion('redis')
 
 const columns = [
-  { title: '版本', dataIndex: 'version', width: 150 },
-  { title: '状态', slotName: 'status', width: 200 },
-  { title: '操作', slotName: 'actions' }
+  { title: '版本', dataIndex: 'version', width: 150, align: 'center' },
+  { title: '状态', slotName: 'status', width: 200, align: 'center' },
+  { title: '操作', slotName: 'actions', align: 'center' }
 ]
 
 const redisStatus = ref<Record<string, { running: boolean; pid?: number; port?: number }>>({})
@@ -130,7 +124,7 @@ watch(
     <a-table
       :columns="columns"
       :data="onlineVersions"
-      :pagination="{ pageSize: 20, showTotal: true }"
+      :pagination="{ pageSize: 10, showTotal: true }"
     >
       <template #status="{ record }">
         <a-space>
@@ -162,9 +156,6 @@ watch(
             :loading="installingVersions[`redis-${record.version}`]"
             @click="installOnline(record.version, record.url)"
           >
-            <template #icon>
-              <icon-cloud-download />
-            </template>
             安装
           </a-button>
           <a-button
@@ -194,9 +185,6 @@ watch(
             size="small"
             @click="openRedisTerminal(record.version)"
           >
-            <template #icon>
-              <icon-code-block />
-            </template>
             终端
           </a-button>
           <a-button
@@ -209,9 +197,6 @@ watch(
             size="small"
             @click="restartRedis(record.version)"
           >
-            <template #icon>
-              <icon-refresh />
-            </template>
             重启
           </a-button>
           <a-button
@@ -233,15 +218,12 @@ watch(
               status="danger"
               size="small"
             >
-              <template #icon>
-                <icon-delete />
-              </template>
               卸载
             </a-button>
           </a-popconfirm>
           <a-button
             v-if="isInstalled(record.version) && isCurrent(record.version)"
-            type="text"
+            type="outline"
             size="small"
             @click="checkRedisStatus(record.version)"
           >

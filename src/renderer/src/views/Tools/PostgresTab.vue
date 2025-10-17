@@ -1,15 +1,5 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted } from 'vue'
-import {
-  IconDelete,
-  IconCloudDownload,
-  IconRefresh,
-  IconPlus,
-  IconEye,
-  IconEyeInvisible,
-  IconExport,
-  IconImport
-} from '@arco-design/web-vue/es/icon'
 import { Message, Modal } from '@arco-design/web-vue'
 import { useToolVersion } from './composables/useToolVersion'
 import { useLogsStore } from '../../store/logs'
@@ -438,9 +428,6 @@ onMounted(() => {
         数据库管理
       </a-button>
       <a-button type="outline" size="small" :loading="fetchingVersions" @click="refreshVersions()">
-        <template #icon>
-          <icon-refresh />
-        </template>
         刷新版本列表
       </a-button>
     </div>
@@ -449,12 +436,12 @@ onMounted(() => {
     <div v-if="state.activeTab === 'versions'" class="w-full">
       <a-table
         :columns="[
-          { title: '版本', dataIndex: 'version', width: 150 },
-          { title: '状态', slotName: 'status', width: 200 },
-          { title: '操作', slotName: 'actions' }
+          { title: '版本', dataIndex: 'version', width: 150, align: 'center' },
+          { title: '状态', slotName: 'status', width: 200, align: 'center' },
+          { title: '操作', slotName: 'actions', align: 'center' }
         ]"
         :data="onlineVersions"
-        :pagination="{ pageSize: 20, showTotal: true }"
+        :pagination="{ pageSize: 10, showTotal: true }"
       >
         <template #status="{ record }">
           <a-space>
@@ -484,9 +471,6 @@ onMounted(() => {
               :loading="installingVersions[`pg-${record.version}`]"
               @click="installOnline(record.version, record.url)"
             >
-              <template #icon>
-                <icon-cloud-download />
-              </template>
               安装
             </a-button>
             <a-button
@@ -516,15 +500,12 @@ onMounted(() => {
                 status="danger"
                 size="small"
               >
-                <template #icon>
-                  <icon-delete />
-                </template>
                 卸载
               </a-button>
             </a-popconfirm>
             <a-button
               v-if="isInstalled(record.version) && isCurrent(record.version)"
-              type="text"
+              type="outline"
               size="small"
               @click="checkPgStatus(record.version)"
             >
@@ -541,27 +522,22 @@ onMounted(() => {
         <div class="text-sm text-gray-600">
           当前版本: <span class="font-semibold">{{ currentPgVersion || '无' }}</span>
         </div>
-        <a-button type="primary" size="small" @click="showAddDbModal = true">
-          <template #icon>
-            <icon-plus />
-          </template>
-          添加数据库
-        </a-button>
+        <a-button type="outline" size="small" @click="showAddDbModal = true"> 添加数据库 </a-button>
       </div>
 
       <a-table
         :columns="[
-          { title: '数据库名称', dataIndex: 'dbName', width: 150 },
-          { title: '用户名', dataIndex: 'username', width: 120 },
-          { title: '密码', slotName: 'password', width: 180 },
-          { title: '备份', slotName: 'backup', width: 150 },
-          { title: '数据库位置', dataIndex: 'location', width: 120 },
-          { title: '备注', dataIndex: 'note', width: 100 },
-          { title: '操作', slotName: 'actions', width: 150 }
+          { title: '数据库名称', dataIndex: 'dbName', width: 150, align: 'center' },
+          { title: '用户名', dataIndex: 'username', width: 120, align: 'center' },
+          { title: '密码', slotName: 'password', width: 180, align: 'center' },
+          { title: '备份', slotName: 'backup', width: 150, align: 'center' },
+          { title: '数据库位置', dataIndex: 'location', width: 120, align: 'center' },
+          { title: '备注', dataIndex: 'note', width: 100, align: 'center' },
+          { title: '操作', slotName: 'actions', width: 150, align: 'center' }
         ]"
         :data="databases"
         :loading="loadingDatabases"
-        :pagination="{ pageSize: 20, showTotal: true }"
+        :pagination="{ pageSize: 10, showTotal: true }"
       >
         <template #password="{ record }">
           <a-space>
@@ -569,39 +545,30 @@ onMounted(() => {
             <span v-else>{{ record.password ? '••••••••' : '未设置' }}</span>
             <a-button
               v-if="record.password"
-              type="text"
+              type="outline"
               size="small"
               @click="togglePasswordVisible(record.dbName)"
             >
-              <template #icon>
-                <icon-eye v-if="!passwordVisible[record.dbName]" />
-                <icon-eye-invisible v-else />
-              </template>
+              {{ passwordVisible[record.dbName] ? '隐藏' : '显示' }}
             </a-button>
           </a-space>
         </template>
         <template #backup="{ record }">
           <a-space>
             <a-button
-              type="text"
+              type="outline"
               size="small"
               :loading="backupLoading[record.dbName]"
               @click="handleBackup(record.dbName, record.username, record.password)"
             >
-              <template #icon>
-                <icon-export />
-              </template>
               备份
             </a-button>
             <a-button
-              type="text"
+              type="outline"
               size="small"
               :loading="restoreLoading[record.dbName]"
               @click="handleRestore(record.dbName, record.username, record.password)"
             >
-              <template #icon>
-                <icon-import />
-              </template>
               导入
             </a-button>
           </a-space>
@@ -609,7 +576,7 @@ onMounted(() => {
         <template #actions="{ record }">
           <a-space>
             <a-button
-              type="text"
+              type="outline"
               status="success"
               size="small"
               @click="openChangePwdModal(record.dbName, record.username)"
@@ -621,7 +588,7 @@ onMounted(() => {
               content="确定要删除此数据库吗？"
               @ok="handleDeleteDatabase(record.dbName)"
             >
-              <a-button type="text" status="danger" size="small">删除</a-button>
+              <a-button type="outline" status="danger" size="small">删除</a-button>
             </a-popconfirm>
           </a-space>
         </template>
@@ -645,7 +612,7 @@ onMounted(() => {
         <a-form-item label="密码" required>
           <a-input-password v-model="addDbForm.password" placeholder="请输入密码">
             <template #append>
-              <a-button type="text" size="small" @click="generatePassword()">生成</a-button>
+              <a-button type="outline" size="small" @click="generatePassword()">生成</a-button>
             </template>
           </a-input-password>
         </a-form-item>
@@ -666,10 +633,8 @@ onMounted(() => {
         <a-form-item label="密码" required>
           <a-input-password v-model="changePwdForm.password" placeholder="请输入新密码">
             <template #append>
-              <a-button type="text" size="small" @click="generatePasswordForChange()">
-                <template #icon>
-                  <icon-refresh />
-                </template>
+              <a-button type="outline" size="small" @click="generatePasswordForChange()">
+                生成
               </a-button>
             </template>
           </a-input-password>

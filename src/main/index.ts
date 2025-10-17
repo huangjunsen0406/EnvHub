@@ -2075,17 +2075,11 @@ app.whenReady().then(() => {
     const socketPath = `/tmp/mysql_main_3306.sock`
 
     const users = await listMysqlUsers(binDir, socketPath)
-    const metadata = getAllMysqlUserMetadata(args.mysqlVersion, 'main')
+    return users
+  })
 
-    // 合并用户列表和元数据
-    return users.map((user) => {
-      const meta = metadata.find((m) => m.username === user.username && m.host === user.host)
-      return {
-        ...user,
-        password: meta?.password || '',
-        note: meta?.note || ''
-      }
-    })
+  ipcMain.handle('envhub:mysql:getUserMetadata', async (_evt, args: { mysqlVersion: string }) => {
+    return getAllMysqlUserMetadata(args.mysqlVersion, 'main')
   })
 
   ipcMain.handle(
