@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
+import { onMounted, ref } from 'vue'
 import { IconDelete, IconCloudDownload, IconRefresh } from '@arco-design/web-vue/es/icon'
 import { useToolVersion } from './composables/useToolVersion'
 import InstallProgressModal from './components/InstallProgressModal.vue'
@@ -24,6 +24,43 @@ const columns = [
   { title: '状态', slotName: 'status', width: 200 },
   { title: '操作', slotName: 'actions' }
 ]
+
+// 操作状态追踪 - 按版本追踪而不是全局状态
+const versionLoading = ref<Record<string, boolean>>({})
+
+// 获取指定版本的加载状态
+function isVersionLoading(version: string): boolean {
+  return versionLoading.value[version] || false
+}
+
+// 设置指定版本的加载状态
+function setVersionLoading(version: string, loading: boolean): void {
+  versionLoading.value[version] = loading
+}
+
+// 重写 useVersion 以支持加载状态
+async function usePythonVersion(version: string): Promise<void> {
+  if (isVersionLoading(version)) return
+  setVersionLoading(version, true)
+  try {
+    await useVersion(version)
+  } finally {
+    setVersionLoading(version, false)
+  }
+}
+
+// 重写 unsetCurrent 以支持加载状态
+async function unsetPythonCurrent(): Promise<void> {
+  const currentVersion = onlineVersions.value.find((v) => isCurrent(v.version))?.version
+  if (!currentVersion) return
+  if (isVersionLoading(currentVersion)) return
+  setVersionLoading(currentVersion, true)
+  try {
+    await unsetCurrent()
+  } finally {
+    setVersionLoading(currentVersion, false)
+  }
+}
 
 onMounted(() => {
   // Tab 组件挂载时不自动加载，由父组件控制
@@ -74,7 +111,9 @@ onMounted(() => {
             v-if="isInstalled(record.version) && !isCurrent(record.version)"
             type="outline"
             size="small"
-            @click="useVersion(record.version)"
+            :loading="isVersionLoading(record.version)"
+            :disabled="isVersionLoading(record.version)"
+            @click="usePythonVersion(record.version)"
           >
             启用
           </a-button>
@@ -82,7 +121,9 @@ onMounted(() => {
             v-if="isInstalled(record.version) && isCurrent(record.version)"
             type="outline"
             size="small"
-            @click="unsetCurrent()"
+            :loading="isVersionLoading(record.version)"
+            :disabled="isVersionLoading(record.version)"
+            @click="unsetPythonCurrent()"
           >
             停用
           </a-button>

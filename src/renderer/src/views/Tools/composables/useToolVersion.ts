@@ -39,6 +39,10 @@ export function useToolVersion(tool: Tool): UseToolVersionReturn {
   const fetchingVersions = ref(false)
   const installingVersions = ref<Record<string, boolean>>({})
 
+  // 防抖标志，防止快速点击时多次调用
+  let isUsing = false
+  let isUnsetting = false
+
   const installProgress = ref<InstallProgress>({
     visible: false,
     tool: '',
@@ -117,24 +121,42 @@ export function useToolVersion(tool: Tool): UseToolVersionReturn {
   }
 
   async function useVersion(version: string): Promise<void> {
+    // 防止快速重复点击
+    if (isUsing) {
+      Message.warning('操作进行中，请稍候...')
+      return
+    }
+
     try {
+      isUsing = true
       await window.electron.ipcRenderer.invoke('envhub:use', { tool, version })
       Message.success(`已切换到 ${tool} ${version}`)
       await toolsStore.refreshInstalled()
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : '未知错误'
       Message.error(`切换失败：${message}`)
+    } finally {
+      isUsing = false
     }
   }
 
   async function unsetCurrent(): Promise<void> {
+    // 防止快速重复点击
+    if (isUnsetting) {
+      Message.warning('操作进行中，请稍候...')
+      return
+    }
+
     try {
+      isUnsetting = true
       await window.electron.ipcRenderer.invoke('envhub:use', { tool, version: '' })
       Message.success(`已取消 ${tool} 的当前版本设置`)
       await toolsStore.refreshInstalled()
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : '未知错误'
       Message.error(`取消失败：${message}`)
+    } finally {
+      isUnsetting = false
     }
   }
 

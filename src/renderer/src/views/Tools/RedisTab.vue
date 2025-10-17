@@ -34,6 +34,19 @@ const columns = [
 
 const redisStatus = ref<Record<string, { running: boolean; pid?: number; port?: number }>>({})
 
+// 操作状态追踪 - 按版本追踪而不是全局状态
+const versionLoading = ref<Record<string, boolean>>({})
+
+// 获取指定版本的加载状态
+function isVersionLoading(version: string): boolean {
+  return versionLoading.value[version] || false
+}
+
+// 设置指定版本的加载状态
+function setVersionLoading(version: string, loading: boolean): void {
+  versionLoading.value[version] = loading
+}
+
 async function checkRedisStatus(v: string): Promise<void> {
   try {
     const status = await window.electron.ipcRenderer.invoke('envhub:redis:status', {
@@ -49,17 +62,32 @@ async function checkRedisStatus(v: string): Promise<void> {
 
 // 重写 useVersion 以支持 Redis 状态检查
 async function useRedisVersion(version: string): Promise<void> {
-  await useVersion(version)
-  await checkRedisStatus(version)
+  if (isVersionLoading(version)) return
+  setVersionLoading(version, true)
+  try {
+    await useVersion(version)
+    await checkRedisStatus(version)
+  } finally {
+    setVersionLoading(version, false)
+  }
 }
 
 // 重写 unsetCurrent 以支持 Redis 状态检查
 async function unsetRedisCurrent(): Promise<void> {
-  await unsetCurrent()
-  // Redis 停用后刷新所有版本状态
-  const versions = Object.keys(redisStatus.value)
-  for (const v of versions) {
-    await checkRedisStatus(v)
+  // 需要获取当前版本，通过检查已安装版本中哪个是当前版本
+  const currentVersion = onlineVersions.value.find((v) => isCurrent(v.version))?.version
+  if (!currentVersion) return
+  if (isVersionLoading(currentVersion)) return
+  setVersionLoading(currentVersion, true)
+  try {
+    await unsetCurrent()
+    // Redis 停用后刷新所有版本状态
+    const versions = Object.keys(redisStatus.value)
+    for (const v of versions) {
+      await checkRedisStatus(v)
+    }
+  } finally {
+    setVersionLoading(currentVersion, false)
   }
 }
 
@@ -164,6 +192,8 @@ async function reloadRedisConfig(version: string): Promise<void> {
             v-if="isInstalled(record.version) && !isCurrent(record.version)"
             type="outline"
             size="small"
+            :loading="isVersionLoading(record.version)"
+            :disabled="isVersionLoading(record.version)"
             @click="useRedisVersion(record.version)"
           >
             启用
@@ -172,6 +202,8 @@ async function reloadRedisConfig(version: string): Promise<void> {
             v-if="isInstalled(record.version) && isCurrent(record.version)"
             type="outline"
             size="small"
+            :loading="isVersionLoading(record.version)"
+            :disabled="isVersionLoading(record.version)"
             @click="unsetRedisCurrent()"
           >
             停用
@@ -185,6 +217,7 @@ async function reloadRedisConfig(version: string): Promise<void> {
             type="outline"
             status="success"
             size="small"
+            :loading="isVersionLoading(record.version)"
             @click="openRedisTerminal(record.version)"
           >
             <template #icon>
@@ -200,6 +233,7 @@ async function reloadRedisConfig(version: string): Promise<void> {
             "
             type="outline"
             size="small"
+            :loading="isVersionLoading(record.version)"
             @click="restartRedis(record.version)"
           >
             <template #icon>
@@ -215,6 +249,7 @@ async function reloadRedisConfig(version: string): Promise<void> {
             "
             type="outline"
             size="small"
+            :loading="isVersionLoading(record.version)"
             @click="reloadRedisConfig(record.version)"
           >
             重载配置
@@ -236,6 +271,7 @@ async function reloadRedisConfig(version: string): Promise<void> {
             v-if="isInstalled(record.version) && isCurrent(record.version)"
             type="text"
             size="small"
+            :loading="isVersionLoading(record.version)"
             @click="checkRedisStatus(record.version)"
           >
             刷新状态

@@ -39,6 +39,19 @@ const state = reactive({
   activeTab: 'versions' as 'versions' | 'databases'
 })
 
+// 操作状态追踪 - 按版本追踪而不是全局状态
+const versionLoading = ref<Record<string, boolean>>({})
+
+// 获取指定版本的加载状态
+function isVersionLoading(version: string): boolean {
+  return versionLoading.value[version] || false
+}
+
+// 设置指定版本的加载状态
+function setVersionLoading(version: string, loading: boolean): void {
+  versionLoading.value[version] = loading
+}
+
 // 数据库管理相关
 interface DatabaseWithMetadata {
   dbName: string
@@ -96,17 +109,32 @@ async function checkPgStatus(v: string): Promise<void> {
 
 // 重写 useVersion 以支持 PostgreSQL 状态检查
 async function usePgVersion(version: string): Promise<void> {
-  await useVersion(version)
-  await checkPgStatus(version)
+  if (isVersionLoading(version)) return
+  setVersionLoading(version, true)
+  try {
+    await useVersion(version)
+    await checkPgStatus(version)
+  } finally {
+    setVersionLoading(version, false)
+  }
 }
 
 // 重写 unsetCurrent 以支持 PostgreSQL 状态检查
 async function unsetPgCurrent(): Promise<void> {
-  await unsetCurrent()
-  // PostgreSQL 停用后刷新所有版本状态
-  const versions = Object.keys(pgStatus.value)
-  for (const v of versions) {
-    await checkPgStatus(v)
+  const versionToUnset = currentPgVersion.value
+  if (!versionToUnset) return
+
+  if (isVersionLoading(versionToUnset)) return
+  setVersionLoading(versionToUnset, true)
+  try {
+    await unsetCurrent()
+    // PostgreSQL 停用后刷新所有版本状态
+    const versions = Object.keys(pgStatus.value)
+    for (const v of versions) {
+      await checkPgStatus(v)
+    }
+  } finally {
+    setVersionLoading(versionToUnset, false)
   }
 }
 
@@ -465,6 +493,8 @@ onMounted(() => {
               v-if="isInstalled(record.version) && !isCurrent(record.version)"
               type="outline"
               size="small"
+              :loading="isVersionLoading(record.version)"
+              :disabled="isVersionLoading(record.version)"
               @click="usePgVersion(record.version)"
             >
               启用
@@ -473,6 +503,8 @@ onMounted(() => {
               v-if="isInstalled(record.version) && isCurrent(record.version)"
               type="outline"
               size="small"
+              :loading="isVersionLoading(record.version)"
+              :disabled="isVersionLoading(record.version)"
               @click="unsetPgCurrent()"
             >
               停用

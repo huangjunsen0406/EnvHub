@@ -60,20 +60,72 @@ export function listInstalled(
 
 export function uninstallTool(tool: Tool, version: string, dp: DetectedPlatform): void {
   const p = toolchainRoot(tool, version, dp)
-  if (!existsSync(p)) return
-
-  try {
-    // 对于 macOS，使用 rm -rf 处理 .app 包和 .asar 文件
-    if (process.platform === 'darwin') {
-      execSync(`rm -rf "${p}"`, { encoding: 'utf8' })
-    } else {
-      // Windows 和 Linux 使用 Node.js 的 rmSync
-      rmSync(p, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+  if (!existsSync(p)) {
+    logInfo(`Tool path not found: ${p}`)
+  } else {
+    try {
+      // 对于 macOS，使用 rm -rf 处理 .app 包和 .asar 文件
+      if (process.platform === 'darwin') {
+        execSync(`rm -rf "${p}"`, { encoding: 'utf8' })
+      } else {
+        // Windows 和 Linux 使用 Node.js 的 rmSync
+        rmSync(p, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+      }
+      logInfo(`Uninstalled ${tool}@${version} from ${p}`)
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error)
+      logInfo(`Failed to uninstall ${tool} binaries: ${message}`)
+      throw error
     }
-  } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : String(error)
-    logInfo(`Failed to uninstall ${tool}@${version}: ${message}`)
-    throw error
+  }
+
+  // 对于 PostgreSQL，删除数据目录和元数据
+  if (tool === 'pg') {
+    try {
+      const pgDataRoot = join(envhubRoot(), 'pg', version)
+      if (existsSync(pgDataRoot)) {
+        if (process.platform === 'darwin') {
+          execSync(`rm -rf "${pgDataRoot}"`, { encoding: 'utf8' })
+        } else {
+          rmSync(pgDataRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+        }
+        logInfo(`Deleted PostgreSQL data directory: ${pgDataRoot}`)
+      }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error)
+      logInfo(`Warning: Failed to delete PostgreSQL data directory: ${message}`)
+      // 不抛出错误，仅记录警告
+    }
+  }
+
+  // 对于 Redis，删除数据和日志目录
+  if (tool === 'redis') {
+    try {
+      const redisDataRoot = join(envhubRoot(), 'data', 'redis', version)
+      const redisLogRoot = join(envhubRoot(), 'logs', 'redis', version)
+
+      if (existsSync(redisDataRoot)) {
+        if (process.platform === 'darwin') {
+          execSync(`rm -rf "${redisDataRoot}"`, { encoding: 'utf8' })
+        } else {
+          rmSync(redisDataRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+        }
+        logInfo(`Deleted Redis data directory: ${redisDataRoot}`)
+      }
+
+      if (existsSync(redisLogRoot)) {
+        if (process.platform === 'darwin') {
+          execSync(`rm -rf "${redisLogRoot}"`, { encoding: 'utf8' })
+        } else {
+          rmSync(redisLogRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+        }
+        logInfo(`Deleted Redis log directory: ${redisLogRoot}`)
+      }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error)
+      logInfo(`Warning: Failed to delete Redis data/log directory: ${message}`)
+      // 不抛出错误，仅记录警告
+    }
   }
 }
 

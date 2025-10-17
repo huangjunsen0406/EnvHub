@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ref } from 'vue'
 import { IconDelete, IconCloudDownload, IconRefresh } from '@arco-design/web-vue/es/icon'
 import { useToolVersion } from './composables/useToolVersion'
 import InstallProgressModal from './components/InstallProgressModal.vue'
@@ -23,6 +24,44 @@ const columns = [
   { title: '状态', slotName: 'status', width: 200 },
   { title: '操作', slotName: 'actions' }
 ]
+
+// 操作状态追踪 - 按版本追踪而不是全局状态
+const versionLoading = ref<Record<string, boolean>>({})
+
+// 获取指定版本的加载状态
+function isVersionLoading(version: string): boolean {
+  return versionLoading.value[version] || false
+}
+
+// 设置指定版本的加载状态
+function setVersionLoading(version: string, loading: boolean): void {
+  versionLoading.value[version] = loading
+}
+
+// 重写 useVersion 以支持加载状态
+async function useJavaVersion(version: string): Promise<void> {
+  if (isVersionLoading(version)) return
+  setVersionLoading(version, true)
+  try {
+    await useVersion(version)
+  } finally {
+    setVersionLoading(version, false)
+  }
+}
+
+// 重写 unsetCurrent 以支持加载状态
+async function unsetJavaCurrent(): Promise<void> {
+  const currentVersion = onlineVersions.value.find((v) => isCurrent(v.version))?.version
+  if (!currentVersion) return
+
+  if (isVersionLoading(currentVersion)) return
+  setVersionLoading(currentVersion, true)
+  try {
+    await unsetCurrent()
+  } finally {
+    setVersionLoading(currentVersion, false)
+  }
+}
 </script>
 
 <template>
@@ -70,7 +109,9 @@ const columns = [
             v-if="isInstalled(record.version) && !isCurrent(record.version)"
             type="outline"
             size="small"
-            @click="useVersion(record.version)"
+            :loading="isVersionLoading(record.version)"
+            :disabled="isVersionLoading(record.version)"
+            @click="useJavaVersion(record.version)"
           >
             启用
           </a-button>
@@ -78,7 +119,9 @@ const columns = [
             v-if="isInstalled(record.version) && isCurrent(record.version)"
             type="outline"
             size="small"
-            @click="unsetCurrent()"
+            :loading="isVersionLoading(record.version)"
+            :disabled="isVersionLoading(record.version)"
+            @click="unsetJavaCurrent()"
           >
             停用
           </a-button>
