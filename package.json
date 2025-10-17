@@ -2,7 +2,7 @@
   "name": "envhub",
   "productName": "EnvHub",
   "version": "1.0.0",
-  "description": "An Electron application with Vue and TypeScript",
+  "description": "跨平台开发环境管理工具，一键安装和管理多版本开发工具",
   "main": "./out/main/index.js",
   "author": "Junsen",
   "homepage": "https://github.com/huangjunsen0406/EnvHub",
@@ -13,6 +13,7 @@
   "bugs": {
     "url": "https://github.com/huangjunsen0406/EnvHub/issues"
   },
+  "license": "Apache-2.0",
   "scripts": {
     "format": "prettier --write .",
     "lint": "eslint --cache .",
@@ -26,7 +27,8 @@
     "build:unpack": "npm run build && electron-builder --dir",
     "build:win": "npm run build && electron-builder --win",
     "build:mac": "npm run build && electron-builder --mac",
-    "build:linux": "npm run build && electron-builder --linux"
+    "build:linux": "npm run build && electron-builder --linux",
+    "generate-icons": "node scripts/generate-icons.js"
   },
   "dependencies": {
     "@electron-toolkit/preload": "^3.0.2",
@@ -51,7 +53,9 @@
     "electron-vite": "^4.0.1",
     "eslint": "^9.36.0",
     "eslint-plugin-vue": "^10.4.0",
+    "png-to-ico": "^3.0.1",
     "prettier": "^3.6.2",
+    "sharp": "^0.34.4",
     "typescript": "^5.9.2",
     "vite": "^7.1.6",
     "vue": "^3.5.21",
