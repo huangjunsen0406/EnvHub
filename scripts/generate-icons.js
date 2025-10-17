@@ -155,7 +155,8 @@ async function generateICO() {
   try {
     // 尝试使用 png-to-ico 包
     try {
-      const pngToIco = require('png-to-ico')
+      // 使用动态 import 导入 ES 模块
+      const { default: pngToIco } = await import('png-to-ico')
 
       // 使用多个尺寸生成 ICO
       const sizes = [16, 24, 32, 48, 64, 128, 256]
@@ -168,6 +169,7 @@ async function generateICO() {
       console.log('  ✅ 生成 icon.ico (多尺寸)')
     } catch (e) {
       // 如果没有安装 png-to-ico，使用 sharp 生成 256x256 的 PNG
+      console.log('  ⚠️  png-to-ico 错误:', e.message)
       const sharp = require('sharp')
       const roundedCorners = await createRoundedCorners(256)
 
