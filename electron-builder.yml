@@ -1,5 +1,5 @@
-appId: com.electron.app
-productName: envhub
+appId: com.envhub.app
+productName: EnvHub
 directories:
   buildResources: build
 files:
