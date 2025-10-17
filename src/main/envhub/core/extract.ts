@@ -1,4 +1,4 @@
-import { mkdirSync, createWriteStream, readFileSync } from 'fs'
+import { mkdirSync, createWriteStream, readFileSync, readdirSync, statSync, existsSync, rmSync, renameSync } from 'fs'
 import { Readable } from 'stream'
 import { extname, join, dirname } from 'path'
 import { spawn } from 'child_process'
@@ -33,6 +33,29 @@ export async function extractArchive(
         `Expand-Archive -Path "${archivePath}" -DestinationPath "${destDir}" -Force`
       ]
       await run(cmd, args)
+
+      // Handle strip option for Windows ZIP files
+      if (stripLevels > 0) {
+        // Check if there's a single top-level directory
+        const entries = readdirSync(destDir)
+        if (entries.length === 1) {
+          const topDir = join(destDir, entries[0])
+          const stat = statSync(topDir)
+          if (stat.isDirectory()) {
+            // Move contents up and remove the top directory
+            const files = readdirSync(topDir)
+            for (const file of files) {
+              const src = join(topDir, file)
+              const dest = join(destDir, file)
+              if (existsSync(dest)) {
+                rmSync(dest, { recursive: true, force: true })
+              }
+              renameSync(src, dest)
+            }
+            rmSync(topDir, { recursive: true, force: true })
+          }
+        }
+      }
     } else {
       await run('unzip', ['-o', archivePath, '-d', destDir])
     }
