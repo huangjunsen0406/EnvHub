@@ -4,8 +4,9 @@ import { useToolsStore } from '../store/tools'
 import { useLogsStore } from '../store/logs'
 import PostgresTab from './Tools/PostgresTab.vue'
 import RedisTab from './Tools/RedisTab/index.vue'
+import MySQLTab from './Tools/MySQLTab.vue'
 
-type Database = 'pg' | 'redis'
+type Database = 'pg' | 'redis' | 'mysql'
 
 const activeTab = ref<Database>('pg')
 const toolsStore = useToolsStore()
@@ -16,7 +17,7 @@ onMounted(async () => {
     await toolsStore.refreshInstalled()
 
     // 2. 后台并行加载所有数据库的在线版本
-    const databases: Database[] = ['pg', 'redis']
+    const databases: Database[] = ['pg', 'redis', 'mysql']
     await Promise.all(
       databases.map((db) =>
         !toolsStore.versionsLoaded[db]
@@ -46,6 +47,14 @@ onMounted(async () => {
             <span style="font-size: 18px">🐘</span>
           </template>
           <PostgresTab />
+        </a-tab-pane>
+
+        <!-- MySQL Tab -->
+        <a-tab-pane key="mysql" title="MySQL">
+          <template #icon>
+            <span style="font-size: 18px">🐬</span>
+          </template>
+          <MySQLTab />
         </a-tab-pane>
 
         <!-- Redis Tab -->

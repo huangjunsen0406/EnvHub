@@ -14,9 +14,14 @@ function run(cmd: string, args: string[]): Promise<void> {
   })
 }
 
-export async function extractArchive(archivePath: string, destDir: string): Promise<void> {
+export async function extractArchive(
+  archivePath: string,
+  destDir: string,
+  options?: { strip?: number }
+): Promise<void> {
   mkdirSync(destDir, { recursive: true })
   const ext = extname(archivePath).toLowerCase()
+  const stripLevels = options?.strip ?? 0
 
   if (ext === '.zip') {
     if (process.platform === 'win32') {
@@ -35,19 +40,27 @@ export async function extractArchive(archivePath: string, destDir: string): Prom
   }
 
   if (archivePath.endsWith('.tar.gz') || archivePath.endsWith('.tgz')) {
-    await tarExtract({ file: archivePath, cwd: destDir })
+    await tarExtract({
+      file: archivePath,
+      cwd: destDir,
+      strip: stripLevels
+    })
     return
   }
 
   if (archivePath.endsWith('.tar.zst')) {
     // 使用 Node.js 包解压 zstd 压缩的 tar 文件
     // 支持 Windows 和 macOS，无需额外安装系统工具
-    await extractTarZst(archivePath, destDir)
+    await extractTarZst(archivePath, destDir, stripLevels)
     return
   }
 
   if (archivePath.endsWith('.tar')) {
-    await tarExtract({ file: archivePath, cwd: destDir })
+    await tarExtract({
+      file: archivePath,
+      cwd: destDir,
+      strip: stripLevels
+    })
     return
   }
 
@@ -57,7 +70,7 @@ export async function extractArchive(archivePath: string, destDir: string): Prom
 /**
  * 使用 Node.js 包解压 .tar.zst 文件
  */
-async function extractTarZst(archivePath: string, destDir: string): Promise<void> {
+async function extractTarZst(archivePath: string, destDir: string, strip = 0): Promise<void> {
   const ZstdCodecModule = await ZstdCodec.run((zstd) => ({
     decompress: (data: Uint8Array) => zstd.decompress(data)
   }))
@@ -68,7 +81,21 @@ async function extractTarZst(archivePath: string, destDir: string): Promise<void
     const extract = tarStreamExtract()
 
     extract.on('entry', (header, stream, next) => {
-      const fullPath = join(destDir, header.name)
+      let pathName = header.name
+
+      // 处理 strip 参数：去掉前 N 级目录
+      if (strip > 0) {
+        const parts = pathName.split('/').filter((p) => p)
+        if (parts.length <= strip) {
+          // 跳过顶层目录本身
+          stream.resume()
+          next()
+          return
+        }
+        pathName = parts.slice(strip).join('/')
+      }
+
+      const fullPath = join(destDir, pathName)
 
       if (header.type === 'directory') {
         mkdirSync(fullPath, { recursive: true })

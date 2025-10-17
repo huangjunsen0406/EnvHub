@@ -16,7 +16,7 @@ export interface JavaInstallOptions {
 export async function installJava(
   opts: JavaInstallOptions
 ): Promise<{ javaHome: string; javaExe: string; javacExe: string }> {
-  const baseDir = toolchainRoot('java', opts.version, opts.platform)
+  const baseDir = toolchainRoot('java', opts.version)
   mkdirSync(baseDir, { recursive: true })
 
   // 解压到临时目录

@@ -2,7 +2,7 @@ import { ref, computed, type Ref, type ComputedRef } from 'vue'
 import { Message } from '@arco-design/web-vue'
 import { useToolsStore, type OnlineVersion, type InstalledVersion } from '../../../store/tools'
 
-export type Tool = 'python' | 'node' | 'pg' | 'java' | 'redis'
+export type Tool = 'python' | 'node' | 'pg' | 'java' | 'redis' | 'mysql'
 
 export interface InstallProgress {
   visible: boolean

@@ -23,6 +23,7 @@ interface VersionCache {
   pg?: CacheEntry
   java?: CacheEntry
   redis?: CacheEntry
+  mysql?: CacheEntry
 }
 
 // 缓存有效期：24 小时（毫秒）
@@ -68,7 +69,7 @@ function writeCache(cache: VersionCache): void {
  * 获取指定工具的缓存（如果有效）
  */
 function getCachedVersions(
-  tool: 'python' | 'node' | 'pg' | 'java' | 'redis'
+  tool: 'python' | 'node' | 'pg' | 'java' | 'redis' | 'mysql'
 ): OnlineVersion[] | null {
   const cache = readCache()
   const entry = cache[tool]
@@ -91,7 +92,7 @@ function getCachedVersions(
  * 保存版本列表到缓存
  */
 function setCachedVersions(
-  tool: 'python' | 'node' | 'pg' | 'java' | 'redis',
+  tool: 'python' | 'node' | 'pg' | 'java' | 'redis' | 'mysql',
   versions: OnlineVersion[]
 ): void {
   const cache = readCache()
@@ -714,4 +715,71 @@ function buildRedisStackUrl(version: string, build: string, platform: DetectedPl
   }
 
   return `${baseUrl}/${filename}`
+}
+
+/**
+ * 获取 MySQL 在线版本列表
+ * 使用 MySQL Community Server 官方镜像
+ */
+export async function fetchMysqlVersions(
+  platform: DetectedPlatform,
+  forceRefresh = false
+): Promise<OnlineVersion[]> {
+  // 检查缓存
+  if (!forceRefresh) {
+    const cached = getCachedVersions('mysql')
+    if (cached) return cached
+  }
+
+  try {
+    const versions: OnlineVersion[] = []
+
+    // MySQL 支持的版本列表（按 major.minor 分组）
+    const mysqlVersions = [
+      { version: '9.1.0', major: '9.1', date: '2024-11-01' },
+      { version: '9.0.1', major: '9.0', date: '2024-10-15' },
+      { version: '9.0.0', major: '9.0', date: '2024-07-01' },
+      { version: '8.4.3', major: '8.4', date: '2024-10-14' },
+      { version: '8.4.0', major: '8.4', date: '2024-04-30' },
+      { version: '8.0.40', major: '8.0', date: '2024-10-01' },
+      { version: '8.0.39', major: '8.0', date: '2024-07-01' }
+    ]
+
+    for (const { version, major, date } of mysqlVersions) {
+      const url = buildMysqlUrl(version, major, platform)
+      if (url) {
+        versions.push({ version, url, date })
+      }
+    }
+
+    // 保存到缓存
+    setCachedVersions('mysql', versions)
+
+    return versions
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : String(error)
+    logInfo(`Failed to fetch MySQL versions: ${message}`)
+    return []
+  }
+}
+
+/**
+ * 构建 MySQL 下载链接
+ */
+function buildMysqlUrl(version: string, major: string, platform: DetectedPlatform): string {
+  const baseUrl = 'https://cdn.mysql.com//Downloads'
+
+  let osArch: string
+  if (platform.platformKey === 'darwin-arm64') {
+    osArch = 'macos14-arm64'
+  } else if (platform.platformKey === 'darwin-x64') {
+    osArch = 'macos14-x86_64'
+  } else if (platform.platformKey.includes('linux')) {
+    osArch = 'linux-glibc2.28-x86_64'
+  } else {
+    // Windows 暂不支持
+    return ''
+  }
+
+  return `${baseUrl}/MySQL-${major}/mysql-${version}-${osArch}.tar.gz`
 }

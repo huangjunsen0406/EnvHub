@@ -16,7 +16,7 @@ export interface PgInstallOptions {
 export async function installPostgres(
   opts: PgInstallOptions
 ): Promise<{ binDir: string; dataDir?: string }> {
-  const baseDir = toolchainRoot('pg', opts.version, opts.platform)
+  const baseDir = toolchainRoot('pg', opts.version)
   mkdirSync(baseDir, { recursive: true })
   await extractArchive(opts.archivePath, baseDir)
   await removeQuarantineAttr(baseDir)

@@ -1,6 +1,5 @@
 import { homedir } from 'os'
 import { join } from 'path'
-import { DetectedPlatform } from './platform'
 
 export function getHomeDir(): string {
   return homedir()
@@ -15,12 +14,13 @@ export function shimsDir(): string {
 }
 
 export function toolchainRoot(
-  tool: 'python' | 'node' | 'pg' | 'java' | 'redis',
-  version: string,
-  dp: DetectedPlatform | string
+  tool: 'python' | 'node' | 'pg' | 'java' | 'redis' | 'mysql',
+  version: string
 ): string {
-  const platformKey = typeof dp === 'string' ? dp : dp.platformKey
-  return join(envhubRoot(), 'toolchains', tool, version, platformKey)
+  // 简化路径结构，去掉架构层级
+  // 原来：~/.envhub/toolchains/mysql/9.1.0/darwin-arm64/
+  // 现在：~/.envhub/toolchains/mysql/9.1.0/
+  return join(envhubRoot(), 'toolchains', tool, version)
 }
 
 export function pgDataDir(pgVersion: string, cluster: string): string {
@@ -37,4 +37,12 @@ export function redisDataDir(version: string, cluster: string): string {
 
 export function redisLogDir(version: string, cluster: string): string {
   return join(envhubRoot(), 'logs', 'redis', version, cluster)
+}
+
+export function mysqlDataDir(version: string, cluster: string): string {
+  return join(envhubRoot(), 'mysql', version, cluster)
+}
+
+export function mysqlLogDir(version: string, cluster: string): string {
+  return join(envhubRoot(), 'logs', 'mysql', version, cluster)
 }

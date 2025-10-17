@@ -20,7 +20,7 @@ export async function installRedis(opts: RedisInstallOptions): Promise<{
   binDir: string
   confPath: string
 }> {
-  const baseDir = toolchainRoot('redis', opts.version, opts.platform)
+  const baseDir = toolchainRoot('redis', opts.version)
   mkdirSync(baseDir, { recursive: true })
 
   // 1. 解压预编译包

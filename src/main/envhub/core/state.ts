@@ -6,7 +6,7 @@ import { writeShims, removeShims } from '../env/shims'
 import { execSync } from 'child_process'
 import { writeRedisCliShim } from '../databases/redis/installer'
 import { logInfo } from './log'
-export type Tool = 'python' | 'node' | 'pg' | 'java' | 'redis'
+export type Tool = 'python' | 'node' | 'pg' | 'java' | 'redis' | 'mysql'
 
 interface CurrentState {
   current?: Partial<Record<Tool, string>>
@@ -40,7 +40,7 @@ export function setCurrent(tool: Tool, version: string): void {
 
 export function listInstalled(
   tool: Tool,
-  dp: DetectedPlatform
+  _dp: DetectedPlatform
 ): { version: string; path: string }[] {
   const base = join(envhubRoot(), 'toolchains', tool)
   try {
@@ -49,7 +49,7 @@ export function listInstalled(
       .map((d) => d.name)
     const items: { version: string; path: string }[] = []
     for (const v of versions) {
-      const p = toolchainRoot(tool, v, dp)
+      const p = toolchainRoot(tool, v)
       if (existsSync(p)) items.push({ version: v, path: p })
     }
     return items
@@ -58,8 +58,8 @@ export function listInstalled(
   }
 }
 
-export function uninstallTool(tool: Tool, version: string, dp: DetectedPlatform): void {
-  const p = toolchainRoot(tool, version, dp)
+export function uninstallTool(tool: Tool, version: string, _dp: DetectedPlatform): void {
+  const p = toolchainRoot(tool, version)
   if (!existsSync(p)) {
     logInfo(`Tool path not found: ${p}`)
   } else {
@@ -127,6 +127,36 @@ export function uninstallTool(tool: Tool, version: string, dp: DetectedPlatform)
       // 不抛出错误，仅记录警告
     }
   }
+
+  // 对于 MySQL，删除数据和日志目录
+  if (tool === 'mysql') {
+    try {
+      const mysqlDataRoot = join(envhubRoot(), 'mysql', version)
+      const mysqlLogRoot = join(envhubRoot(), 'logs', 'mysql', version)
+
+      if (existsSync(mysqlDataRoot)) {
+        if (process.platform === 'darwin') {
+          execSync(`rm -rf "${mysqlDataRoot}"`, { encoding: 'utf8' })
+        } else {
+          rmSync(mysqlDataRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+        }
+        logInfo(`Deleted MySQL data directory: ${mysqlDataRoot}`)
+      }
+
+      if (existsSync(mysqlLogRoot)) {
+        if (process.platform === 'darwin') {
+          execSync(`rm -rf "${mysqlLogRoot}"`, { encoding: 'utf8' })
+        } else {
+          rmSync(mysqlLogRoot, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })
+        }
+        logInfo(`Deleted MySQL log directory: ${mysqlLogRoot}`)
+      }
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error)
+      logInfo(`Warning: Failed to delete MySQL data/log directory: ${message}`)
+      // 不抛出错误，仅记录警告
+    }
+  }
 }
 
 export function updateShimsForTool(tool: Tool, version: string, dp: DetectedPlatform): void {
@@ -142,13 +172,15 @@ export function updateShimsForTool(tool: Tool, version: string, dp: DetectedPlat
       removeShims(dp, ['java', 'javac', 'jar'])
     } else if (tool === 'redis') {
       removeShims(dp, ['redis-server', 'redis-cli'])
+    } else if (tool === 'mysql') {
+      removeShims(dp, ['mysql', 'mysqld', 'mysqladmin', 'mysqldump'])
     }
     setCurrent(tool, '')
     return
   }
 
   // Create shims for the specified version
-  const base = toolchainRoot(tool, version, dp)
+  const base = toolchainRoot(tool, version)
   if (tool === 'python') {
     const python =
       process.platform === 'win32' ? join(base, 'python.exe') : join(base, 'bin', 'python')
@@ -197,6 +229,21 @@ export function updateShimsForTool(tool: Tool, version: string, dp: DetectedPlat
     writeRedisCliShim(isWin ? 'win-x64' : dp.platformKey, cliExe, confPath)
 
     writeShims(dp, [{ name: 'redis-server', target: serverExe }])
+  } else if (tool === 'mysql') {
+    const binDir = join(base, 'bin')
+    const mysql = process.platform === 'win32' ? join(binDir, 'mysql.exe') : join(binDir, 'mysql')
+    const mysqld =
+      process.platform === 'win32' ? join(binDir, 'mysqld.exe') : join(binDir, 'mysqld')
+    const mysqladmin =
+      process.platform === 'win32' ? join(binDir, 'mysqladmin.exe') : join(binDir, 'mysqladmin')
+    const mysqldump =
+      process.platform === 'win32' ? join(binDir, 'mysqldump.exe') : join(binDir, 'mysqldump')
+    writeShims(dp, [
+      { name: 'mysql', target: mysql },
+      { name: 'mysqld', target: mysqld },
+      { name: 'mysqladmin', target: mysqladmin },
+      { name: 'mysqldump', target: mysqldump }
+    ])
   }
   setCurrent(tool, version)
 }

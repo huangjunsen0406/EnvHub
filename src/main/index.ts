@@ -3,7 +3,7 @@ import { homedir } from 'os'
 import { join } from 'path'
 import { mkdirSync, existsSync, unlinkSync } from 'fs'
 import { detectPlatform } from './envhub/core/platform'
-import { toolchainRoot, envhubRoot } from './envhub/core/paths'
+import { toolchainRoot, envhubRoot, mysqlDataDir } from './envhub/core/paths'
 import { installNode } from './envhub/runtimes/node'
 import { installJava } from './envhub/runtimes/java'
 import {
@@ -14,6 +14,38 @@ import {
   createDatabase
 } from './envhub/databases/postgres/installer'
 import { installRedis, redisStart, redisStop } from './envhub/databases/redis/installer'
+import { installMysql, mysqlStart, mysqlStop } from './envhub/databases/mysql/installer'
+import { isMysqlRunning, getMysqlStatus } from './envhub/databases/mysql/manager'
+import {
+  createMysqlDatabase,
+  dropMysqlDatabase,
+  listMysqlDatabases,
+  backupDatabase,
+  restoreDatabase
+} from './envhub/databases/mysql/database'
+import {
+  createMysqlUser,
+  dropMysqlUser,
+  changeMysqlPassword,
+  listMysqlUsers
+} from './envhub/databases/mysql/user'
+import {
+  grantPrivileges,
+  revokePrivileges,
+  showGrants,
+  getUserDatabases
+} from './envhub/databases/mysql/grant'
+import {
+  addDatabaseMetadata as addMysqlDatabaseMetadata,
+  deleteDatabaseMetadata as deleteMysqlDatabaseMetadata,
+  getAllDatabaseMetadata as getAllMysqlDatabaseMetadata,
+  addUserMetadata as addMysqlUserMetadata,
+  deleteUserMetadata as deleteMysqlUserMetadata,
+  updateUserPassword as updateMysqlUserPassword,
+  getAllUserMetadata as getAllMysqlUserMetadata,
+  addGrantMetadata,
+  deleteGrantMetadata
+} from './envhub/databases/mysql/metadata'
 import { logInfo } from './envhub/core/log'
 import { enableAutostartMac, enableAutostartWindows } from './envhub/env/autostart'
 import { spawn, exec } from 'child_process'
@@ -38,7 +70,8 @@ import {
   fetchNodeVersions,
   fetchPostgresVersions,
   fetchJavaVersions,
-  fetchRedisVersions
+  fetchRedisVersions,
+  fetchMysqlVersions
 } from './envhub/registry/sources'
 import {
   downloadFile,
@@ -136,15 +169,76 @@ app.whenReady().then(() => {
       node: listInstalled('node', dp),
       pg: listInstalled('pg', dp),
       java: listInstalled('java', dp),
-      redis: listInstalled('redis', dp)
+      redis: listInstalled('redis', dp),
+      mysql: listInstalled('mysql', dp)
     }
   })
 
   ipcMain.handle(
     'envhub:use',
-    async (_evt, args: { tool: 'python' | 'node' | 'pg' | 'java' | 'redis'; version: string }) => {
+    async (
+      _evt,
+      args: { tool: 'python' | 'node' | 'pg' | 'java' | 'redis' | 'mysql'; version: string }
+    ) => {
       const dp = detectPlatform()
       logInfo(`Use ${args.tool}@${args.version || '(unset)'}`)
+
+      // Special handling for MySQL: start when set, stop when unset
+      if (args.tool === 'mysql') {
+        const cur = getCurrent().current?.mysql
+
+        // If unsetting current, stop existing instance first
+        if (!args.version) {
+          if (cur) {
+            try {
+              const binDir = join(toolchainRoot('mysql', cur), 'bin')
+              const dataDir = join(mysqlDataDir(cur, 'main'), 'data')
+              const socketPath = `/tmp/mysql_main_3306.sock`
+              logInfo(`Stopping MySQL for unset: ${dataDir}`)
+              await mysqlStop(binDir, socketPath)
+            } catch (e: unknown) {
+              logInfo(`Stop on unset skipped/failed: ${e instanceof Error ? e.message : String(e)}`)
+            }
+          }
+          updateShimsForTool('mysql', '', dp)
+          return { ok: true, current: getCurrent().current }
+        }
+
+        // Switching/setting current: ensure previous instance stopped (to avoid port conflict)
+        if (cur && cur !== args.version) {
+          try {
+            const binOld = join(toolchainRoot('mysql', cur), 'bin')
+            const socketPath = `/tmp/mysql_main_3306.sock`
+            logInfo(`Stopping previous MySQL: ${cur}`)
+            await mysqlStop(binOld, socketPath)
+          } catch (e: unknown) {
+            logInfo(`Stop previous failed: ${e instanceof Error ? e.message : String(e)}`)
+          }
+        }
+
+        // Write shims for the new version
+        updateShimsForTool('mysql', args.version, dp)
+
+        // Ensure MySQL is running for the selected version
+        try {
+          const binDir = join(toolchainRoot('mysql', args.version), 'bin')
+          const baseDir = mysqlDataDir(args.version, 'main')
+          const dataDir = join(baseDir, 'data')
+          const confPath = join(baseDir, 'my.cnf')
+          const running = await isMysqlRunning(dataDir)
+          if (!running) {
+            logInfo(`Starting MySQL for current version at ${dataDir}`)
+            await mysqlStart(binDir, confPath, dataDir)
+
+            // Wait for MySQL to be ready
+            await new Promise((resolve) => setTimeout(resolve, 3000))
+          }
+        } catch (e: unknown) {
+          logInfo(`MySQL start failed: ${e instanceof Error ? e.message : String(e)}`)
+        }
+
+        return { ok: true, current: getCurrent().current }
+      }
 
       // Special handling for PostgreSQL: start when set, stop when unset
       if (args.tool === 'pg') {
@@ -154,7 +248,7 @@ app.whenReady().then(() => {
         if (!args.version) {
           if (cur) {
             try {
-              const base = toolchainRoot('pg', cur, dp)
+              const base = toolchainRoot('pg', cur)
               const binDir = join(base, 'pgsql', 'bin')
               const { pgDataDir } = await import('./envhub/core/paths')
               const dataDir = pgDataDir(cur, 'main')
@@ -171,7 +265,7 @@ app.whenReady().then(() => {
         // Switching/setting current: ensure previous cluster stopped (to avoid port conflict)
         if (cur && cur !== args.version) {
           try {
-            const baseOld = toolchainRoot('pg', cur, dp)
+            const baseOld = toolchainRoot('pg', cur)
             const binOld = join(baseOld, 'pgsql', 'bin')
             const { pgDataDir } = await import('./envhub/core/paths')
             const dataOld = pgDataDir(cur, 'main')
@@ -187,7 +281,7 @@ app.whenReady().then(() => {
 
         // Ensure cluster is running for the selected version
         try {
-          const base = toolchainRoot('pg', args.version, dp)
+          const base = toolchainRoot('pg', args.version)
           const binDir = join(base, 'pgsql', 'bin')
           const { pgDataDir } = await import('./envhub/core/paths')
           const dataDir = pgDataDir(args.version, 'main')
@@ -229,7 +323,7 @@ app.whenReady().then(() => {
         if (!args.version) {
           if (cur) {
             try {
-              const base = toolchainRoot('redis', cur, dp)
+              const base = toolchainRoot('redis', cur)
               const binDir = join(base, dp.platformKey === 'win-x64' ? '' : 'bin')
 
               // 读取配置文件获取实际端口
@@ -263,7 +357,7 @@ app.whenReady().then(() => {
         // Switching/setting current: ensure previous instance stopped (to avoid port conflict)
         if (cur && cur !== args.version) {
           try {
-            const baseOld = toolchainRoot('redis', cur, dp)
+            const baseOld = toolchainRoot('redis', cur)
             const binOld = join(baseOld, dp.platformKey === 'win-x64' ? '' : 'bin')
 
             // 读取旧版本的配置文件获取实际端口
@@ -296,7 +390,7 @@ app.whenReady().then(() => {
 
         // Ensure Redis is running for the selected version
         try {
-          const base = toolchainRoot('redis', args.version, dp)
+          const base = toolchainRoot('redis', args.version)
           const binDir = join(base, dp.platformKey === 'win-x64' ? '' : 'bin')
           const running = await isRedisRunning(defaultPort)
           if (!running) {
@@ -349,7 +443,7 @@ app.whenReady().then(() => {
       args: { pgVersion: string; cluster: string; port?: number; auth?: 'scram' | 'md5' }
     ) => {
       const dp = detectPlatform()
-      const pgBase = toolchainRoot('pg', args.pgVersion, dp)
+      const pgBase = toolchainRoot('pg', args.pgVersion)
       const binDir = process.platform === 'win32' ? `${pgBase}/bin` : `${pgBase}/bin`
       logInfo(`Initializing PostgreSQL cluster ${args.cluster} on ${args.pgVersion}`)
       const dataDir = await initDb(binDir, {
@@ -371,8 +465,7 @@ app.whenReady().then(() => {
       _evt,
       args: { pgVersion: string; dbName: string; username: string; password: string }
     ) => {
-      const dp = detectPlatform()
-      const pgBase = toolchainRoot('pg', args.pgVersion, dp)
+      const pgBase = toolchainRoot('pg', args.pgVersion)
       const binDir = join(pgBase, 'pgsql', 'bin')
       logInfo(`Creating PG user ${args.username} and db ${args.dbName}`)
       await createUser(binDir, 'postgres', args.username, args.password)
@@ -393,8 +486,7 @@ app.whenReady().then(() => {
   )
 
   ipcMain.handle('envhub:pg:listDatabases', async (_evt, args: { pgVersion: string }) => {
-    const dp = detectPlatform()
-    const pgBase = toolchainRoot('pg', args.pgVersion, dp)
+    const pgBase = toolchainRoot('pg', args.pgVersion)
     const binDir = join(pgBase, 'pgsql', 'bin')
     const psql = process.platform === 'win32' ? join(binDir, 'psql.exe') : join(binDir, 'psql')
 
@@ -420,8 +512,7 @@ app.whenReady().then(() => {
   ipcMain.handle(
     'envhub:pg:getDatabasesWithMetadata',
     async (_evt, args: { pgVersion: string }) => {
-      const dp = detectPlatform()
-      const pgBase = toolchainRoot('pg', args.pgVersion, dp)
+      const pgBase = toolchainRoot('pg', args.pgVersion)
       const binDir = join(pgBase, 'pgsql', 'bin')
       const psql = process.platform === 'win32' ? join(binDir, 'psql.exe') : join(binDir, 'psql')
 
@@ -477,8 +568,7 @@ app.whenReady().then(() => {
   ipcMain.handle(
     'envhub:pg:changePassword',
     async (_evt, args: { pgVersion: string; username: string; newPassword: string }) => {
-      const dp = detectPlatform()
-      const pgBase = toolchainRoot('pg', args.pgVersion, dp)
+      const pgBase = toolchainRoot('pg', args.pgVersion)
       const binDir = join(pgBase, 'pgsql', 'bin')
       const psql = process.platform === 'win32' ? join(binDir, 'psql.exe') : join(binDir, 'psql')
 
@@ -507,8 +597,7 @@ app.whenReady().then(() => {
   ipcMain.handle(
     'envhub:pg:deleteDatabase',
     async (_evt, args: { pgVersion: string; dbName: string }) => {
-      const dp = detectPlatform()
-      const pgBase = toolchainRoot('pg', args.pgVersion, dp)
+      const pgBase = toolchainRoot('pg', args.pgVersion)
       const binDir = join(pgBase, 'pgsql', 'bin')
       const psql = process.platform === 'win32' ? join(binDir, 'psql.exe') : join(binDir, 'psql')
 
@@ -587,8 +676,7 @@ app.whenReady().then(() => {
         filePath: string
       }
     ) => {
-      const dp = detectPlatform()
-      const pgBase = toolchainRoot('pg', args.pgVersion, dp)
+      const pgBase = toolchainRoot('pg', args.pgVersion)
       const binDir = join(pgBase, 'pgsql', 'bin')
       const pgDump =
         process.platform === 'win32' ? join(binDir, 'pg_dump.exe') : join(binDir, 'pg_dump')
@@ -659,8 +747,7 @@ app.whenReady().then(() => {
         filePath: string
       }
     ) => {
-      const dp = detectPlatform()
-      const pgBase = toolchainRoot('pg', args.pgVersion, dp)
+      const pgBase = toolchainRoot('pg', args.pgVersion)
       const binDir = join(pgBase, 'pgsql', 'bin')
       const psql = process.platform === 'win32' ? join(binDir, 'psql.exe') : join(binDir, 'psql')
 
@@ -809,7 +896,7 @@ app.whenReady().then(() => {
     async (
       _evt,
       args: {
-        tool: 'python' | 'node' | 'pg' | 'java' | 'redis'
+        tool: 'python' | 'node' | 'pg' | 'java' | 'redis' | 'mysql'
         forceRefresh?: boolean
         distribution?: string
       }
@@ -841,6 +928,8 @@ app.whenReady().then(() => {
           )
         } else if (args.tool === 'redis') {
           versions = await fetchRedisVersions(dp, forceRefresh)
+        } else if (args.tool === 'mysql') {
+          versions = await fetchMysqlVersions(dp, forceRefresh)
         }
 
         logInfo(`Found ${versions?.length || 0} ${args.tool} versions`)
@@ -858,7 +947,11 @@ app.whenReady().then(() => {
     'envhub:online:install',
     async (
       evt,
-      args: { tool: 'python' | 'node' | 'pg' | 'java' | 'redis'; version: string; url: string }
+      args: {
+        tool: 'python' | 'node' | 'pg' | 'java' | 'redis' | 'mysql'
+        version: string
+        url: string
+      }
     ) => {
       const dp = detectPlatform()
       const { tool, version, url } = args
@@ -927,6 +1020,12 @@ app.whenReady().then(() => {
             platform: dp.platformKey,
             archivePath: savePath
           })
+        } else if (tool === 'mysql') {
+          await installMysql({
+            version,
+            platform: dp,
+            archivePath: savePath
+          })
         }
 
         // All tools require manual activation via "Use" button
@@ -963,8 +1062,7 @@ app.whenReady().then(() => {
 
   // PostgreSQL 状态管理
   ipcMain.handle('envhub:pg:status', async (_evt, args: { pgVersion: string; dataDir: string }) => {
-    const dp = detectPlatform()
-    const pgBase = toolchainRoot('pg', args.pgVersion, dp)
+    const pgBase = toolchainRoot('pg', args.pgVersion)
     const binDir = join(pgBase, 'pgsql', 'bin')
     const home = process.env.HOME || homedir()
     const dataDir = args.dataDir?.startsWith('~/')
@@ -1076,7 +1174,7 @@ app.whenReady().then(() => {
     async (_evt, args: { version: string; confPath: string }) => {
       const platform = detectPlatform()
       const binDir = join(
-        toolchainRoot('redis', args.version, platform),
+        toolchainRoot('redis', args.version),
         platform.platformKey === 'win-x64' ? '' : 'bin'
       )
       logInfo(`Starting Redis ${args.version}`)
@@ -1089,7 +1187,7 @@ app.whenReady().then(() => {
   ipcMain.handle('envhub:redis:stop', async (_evt, args: { version: string; port: number }) => {
     const platform = detectPlatform()
     const binDir = join(
-      toolchainRoot('redis', args.version, platform),
+      toolchainRoot('redis', args.version),
       platform.platformKey === 'win-x64' ? '' : 'bin'
     )
     logInfo(`Stopping Redis ${args.version} on port ${args.port}`)
@@ -1196,7 +1294,7 @@ app.whenReady().then(() => {
       }
 
       const binDir = join(
-        toolchainRoot('redis', args.version, platform),
+        toolchainRoot('redis', args.version),
         platform.platformKey === 'win-x64' ? '' : 'bin'
       )
       const cliExe =
@@ -1241,7 +1339,7 @@ app.whenReady().then(() => {
   // Redis 重启
   ipcMain.handle('envhub:redis:restart', async (_evt, args: { version: string }) => {
     const platform = detectPlatform()
-    const base = toolchainRoot('redis', args.version, platform)
+    const base = toolchainRoot('redis', args.version)
     const binDir = join(base, platform.platformKey === 'win-x64' ? '' : 'bin')
 
     logInfo(`Restarting Redis ${args.version}`)
@@ -1286,7 +1384,7 @@ app.whenReady().then(() => {
   // Redis 重载配置
   ipcMain.handle('envhub:redis:reload', async (_evt, args: { version: string }) => {
     const platform = detectPlatform()
-    const base = toolchainRoot('redis', args.version, platform)
+    const base = toolchainRoot('redis', args.version)
     const binDir = join(base, platform.platformKey === 'win-x64' ? '' : 'bin')
 
     logInfo(`Reloading Redis ${args.version} config`)
@@ -1470,7 +1568,7 @@ app.whenReady().then(() => {
   // Redis 获取运行信息
   ipcMain.handle('envhub:redis:info', async (_evt, args: { version: string }) => {
     const platform = detectPlatform()
-    const base = toolchainRoot('redis', args.version, platform)
+    const base = toolchainRoot('redis', args.version)
     const binDir = join(base, platform.platformKey === 'win-x64' ? '' : 'bin')
 
     try {
@@ -1532,7 +1630,7 @@ app.whenReady().then(() => {
     'envhub:redis:keys',
     async (_evt, args: { version: string; db: number; pattern?: string }) => {
       const platform = detectPlatform()
-      const base = toolchainRoot('redis', args.version, platform)
+      const base = toolchainRoot('redis', args.version)
       const binDir = join(base, platform.platformKey === 'win-x64' ? '' : 'bin')
 
       try {
@@ -1624,7 +1722,7 @@ app.whenReady().then(() => {
     'envhub:redis:get',
     async (_evt, args: { version: string; db: number; key: string }) => {
       const platform = detectPlatform()
-      const base = toolchainRoot('redis', args.version, platform)
+      const base = toolchainRoot('redis', args.version)
       const binDir = join(base, platform.platformKey === 'win-x64' ? '' : 'bin')
 
       try {
@@ -1740,7 +1838,7 @@ app.whenReady().then(() => {
       }
     ) => {
       const platform = detectPlatform()
-      const base = toolchainRoot('redis', args.version, platform)
+      const base = toolchainRoot('redis', args.version)
       const binDir = join(base, platform.platformKey === 'win-x64' ? '' : 'bin')
 
       try {
@@ -1836,7 +1934,7 @@ app.whenReady().then(() => {
     'envhub:redis:del',
     async (_evt, args: { version: string; db: number; key: string }) => {
       const platform = detectPlatform()
-      const base = toolchainRoot('redis', args.version, platform)
+      const base = toolchainRoot('redis', args.version)
       const binDir = join(base, platform.platformKey === 'win-x64' ? '' : 'bin')
 
       try {
@@ -1875,6 +1973,330 @@ app.whenReady().then(() => {
         const message = error instanceof Error ? error.message : String(error)
         throw new Error(`删除键失败: ${message}`)
       }
+    }
+  )
+
+  // ============ MySQL IPC Handlers ============
+
+  // MySQL 状态管理
+  ipcMain.handle(
+    'envhub:mysql:status',
+    async (_evt, args: { mysqlVersion: string; port?: number }) => {
+      const port = args.port || 3306
+      const dataDir = join(mysqlDataDir(args.mysqlVersion, 'main'), 'data')
+      return await getMysqlStatus(dataDir, port)
+    }
+  )
+
+  // MySQL 数据库管理
+  ipcMain.handle('envhub:mysql:listDatabases', async (_evt, args: { mysqlVersion: string }) => {
+    const binDir = join(toolchainRoot('mysql', args.mysqlVersion), 'bin')
+    const socketPath = `/tmp/mysql_main_3306.sock`
+
+    return await listMysqlDatabases(binDir, socketPath)
+  })
+
+  ipcMain.handle(
+    'envhub:mysql:getDatabasesWithMetadata',
+    async (_evt, args: { mysqlVersion: string }) => {
+      const binDir = join(toolchainRoot('mysql', args.mysqlVersion), 'bin')
+      const socketPath = `/tmp/mysql_main_3306.sock`
+
+      const databases = await listMysqlDatabases(binDir, socketPath)
+      const metadata = getAllMysqlDatabaseMetadata(args.mysqlVersion, 'main')
+
+      // 合并数据库列表和元数据
+      return {
+        databases: databases.map((db) => {
+          const meta = metadata.find((m) => m.dbName === db.dbName)
+          return {
+            ...db,
+            note: meta?.note || '',
+            createdAt: meta?.createdAt || ''
+          }
+        })
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'envhub:mysql:createDatabase',
+    async (
+      _evt,
+      args: {
+        mysqlVersion: string
+        dbName: string
+        charset?: string
+        collation?: string
+        note?: string
+      }
+    ) => {
+      const binDir = join(toolchainRoot('mysql', args.mysqlVersion), 'bin')
+      const socketPath = `/tmp/mysql_main_3306.sock`
+
+      await createMysqlDatabase(
+        binDir,
+        socketPath,
+        args.dbName,
+        args.charset || 'utf8mb4',
+        args.collation
+      )
+
+      // 保存元数据
+      addMysqlDatabaseMetadata(args.mysqlVersion, 'main', {
+        dbName: args.dbName,
+        charset: args.charset || 'utf8mb4',
+        collation: args.collation || 'utf8mb4_general_ci',
+        note: args.note || ''
+      })
+
+      return { ok: true }
+    }
+  )
+
+  ipcMain.handle(
+    'envhub:mysql:deleteDatabase',
+    async (_evt, args: { mysqlVersion: string; dbName: string }) => {
+      const binDir = join(toolchainRoot('mysql', args.mysqlVersion), 'bin')
+      const socketPath = `/tmp/mysql_main_3306.sock`
+
+      await dropMysqlDatabase(binDir, socketPath, args.dbName)
+
+      // 删除元数据
+      deleteMysqlDatabaseMetadata(args.mysqlVersion, 'main', args.dbName)
+
+      return { ok: true }
+    }
+  )
+
+  // MySQL 用户管理
+  ipcMain.handle('envhub:mysql:listUsers', async (_evt, args: { mysqlVersion: string }) => {
+    const binDir = join(toolchainRoot('mysql', args.mysqlVersion), 'bin')
+    const socketPath = `/tmp/mysql_main_3306.sock`
+
+    const users = await listMysqlUsers(binDir, socketPath)
+    const metadata = getAllMysqlUserMetadata(args.mysqlVersion, 'main')
+
+    // 合并用户列表和元数据
+    return users.map((user) => {
+      const meta = metadata.find((m) => m.username === user.username && m.host === user.host)
+      return {
+        ...user,
+        password: meta?.password || '',
+        note: meta?.note || ''
+      }
+    })
+  })
+
+  ipcMain.handle(
+    'envhub:mysql:createUser',
+    async (
+      _evt,
+      args: {
+        mysqlVersion: string
+        username: string
+        password: string
+        host?: string
+        note?: string
+      }
+    ) => {
+      const binDir = join(toolchainRoot('mysql', args.mysqlVersion), 'bin')
+      const socketPath = `/tmp/mysql_main_3306.sock`
+      const host = args.host || 'localhost'
+
+      await createMysqlUser(binDir, socketPath, args.username, args.password, host)
+
+      // 保存元数据
+      addMysqlUserMetadata(args.mysqlVersion, 'main', {
+        username: args.username,
+        host,
+        password: args.password,
+        note: args.note || ''
+      })
+
+      return { ok: true }
+    }
+  )
+
+  ipcMain.handle(
+    'envhub:mysql:deleteUser',
+    async (_evt, args: { mysqlVersion: string; username: string; host: string }) => {
+      const binDir = join(toolchainRoot('mysql', args.mysqlVersion), 'bin')
+      const socketPath = `/tmp/mysql_main_3306.sock`
+
+      await dropMysqlUser(binDir, socketPath, args.username, args.host)
+
+      // 删除元数据
+      deleteMysqlUserMetadata(args.mysqlVersion, 'main', args.username, args.host)
+
+      return { ok: true }
+    }
+  )
+
+  ipcMain.handle(
+    'envhub:mysql:changePassword',
+    async (
+      _evt,
+      args: { mysqlVersion: string; username: string; host: string; newPassword: string }
+    ) => {
+      const binDir = join(toolchainRoot('mysql', args.mysqlVersion), 'bin')
+      const socketPath = `/tmp/mysql_main_3306.sock`
+
+      await changeMysqlPassword(binDir, socketPath, args.username, args.host, args.newPassword)
+
+      // 更新元数据
+      updateMysqlUserPassword(args.mysqlVersion, 'main', args.username, args.host, args.newPassword)
+
+      return { ok: true }
+    }
+  )
+
+  // MySQL 权限管理
+  ipcMain.handle(
+    'envhub:mysql:showGrants',
+    async (_evt, args: { mysqlVersion: string; username: string; host: string }) => {
+      const binDir = join(toolchainRoot('mysql', args.mysqlVersion), 'bin')
+      const socketPath = `/tmp/mysql_main_3306.sock`
+
+      return await showGrants(binDir, socketPath, args.username, args.host)
+    }
+  )
+
+  ipcMain.handle(
+    'envhub:mysql:grantPrivileges',
+    async (
+      _evt,
+      args: {
+        mysqlVersion: string
+        username: string
+        host: string
+        database: string
+        privileges: string[]
+      }
+    ) => {
+      const binDir = join(toolchainRoot('mysql', args.mysqlVersion), 'bin')
+      const socketPath = `/tmp/mysql_main_3306.sock`
+
+      await grantPrivileges(
+        binDir,
+        socketPath,
+        args.username,
+        args.host,
+        args.database,
+        args.privileges
+      )
+
+      // 保存元数据
+      addGrantMetadata(args.mysqlVersion, 'main', {
+        username: args.username,
+        host: args.host,
+        database: args.database,
+        privileges: args.privileges
+      })
+
+      return { ok: true }
+    }
+  )
+
+  ipcMain.handle(
+    'envhub:mysql:revokePrivileges',
+    async (
+      _evt,
+      args: {
+        mysqlVersion: string
+        username: string
+        host: string
+        database: string
+        privileges: string[]
+      }
+    ) => {
+      const binDir = join(toolchainRoot('mysql', args.mysqlVersion), 'bin')
+      const socketPath = `/tmp/mysql_main_3306.sock`
+
+      await revokePrivileges(
+        binDir,
+        socketPath,
+        args.username,
+        args.host,
+        args.database,
+        args.privileges
+      )
+
+      // 删除元数据
+      deleteGrantMetadata(args.mysqlVersion, 'main', args.username, args.host, args.database)
+
+      return { ok: true }
+    }
+  )
+
+  ipcMain.handle(
+    'envhub:mysql:getUserDatabases',
+    async (_evt, args: { mysqlVersion: string; username: string; host: string }) => {
+      const binDir = join(toolchainRoot('mysql', args.mysqlVersion), 'bin')
+      const socketPath = `/tmp/mysql_main_3306.sock`
+
+      return await getUserDatabases(binDir, socketPath, args.username, args.host)
+    }
+  )
+
+  // MySQL 备份/导入
+  ipcMain.handle('envhub:mysql:selectBackupPath', async (_evt, args: { dbName: string }) => {
+    const result = await dialog.showSaveDialog({
+      title: '选择备份保存位置',
+      defaultPath: `${args.dbName}-${new Date().toISOString().split('T')[0]}.sql`,
+      filters: [
+        { name: 'SQL 备份文件', extensions: ['sql'] },
+        { name: '所有文件', extensions: ['*'] }
+      ]
+    })
+
+    return {
+      canceled: result.canceled,
+      filePath: result.filePath
+    }
+  })
+
+  ipcMain.handle('envhub:mysql:selectRestoreFile', async () => {
+    const result = await dialog.showOpenDialog({
+      title: '选择备份文件',
+      filters: [
+        { name: 'SQL 备份文件', extensions: ['sql'] },
+        { name: '所有文件', extensions: ['*'] }
+      ],
+      properties: ['openFile']
+    })
+
+    return {
+      canceled: result.canceled,
+      filePath: result.filePaths[0]
+    }
+  })
+
+  ipcMain.handle(
+    'envhub:mysql:backup',
+    async (evt, args: { mysqlVersion: string; dbName: string; filePath: string }) => {
+      const binDir = join(toolchainRoot('mysql', args.mysqlVersion), 'bin')
+      const socketPath = `/tmp/mysql_main_3306.sock`
+
+      await backupDatabase(binDir, socketPath, args.dbName, args.filePath, (message: string) => {
+        evt.sender.send('envhub:mysql:backup:log', message)
+      })
+
+      return { ok: true }
+    }
+  )
+
+  ipcMain.handle(
+    'envhub:mysql:restore',
+    async (evt, args: { mysqlVersion: string; dbName: string; filePath: string }) => {
+      const binDir = join(toolchainRoot('mysql', args.mysqlVersion), 'bin')
+      const socketPath = `/tmp/mysql_main_3306.sock`
+
+      await restoreDatabase(binDir, socketPath, args.dbName, args.filePath, (message: string) => {
+        evt.sender.send('envhub:mysql:restore:log', message)
+      })
+
+      return { ok: true }
     }
   )
 

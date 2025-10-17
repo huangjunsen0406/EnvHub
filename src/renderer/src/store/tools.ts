@@ -21,6 +21,7 @@ export interface InstalledInfo {
   pg: InstalledVersion[]
   java: InstalledVersion[]
   redis: InstalledVersion[]
+  mysql: InstalledVersion[]
   current: Record<string, string>
 }
 
@@ -32,12 +33,14 @@ export const useToolsStore = defineStore('tools', () => {
     pg: OnlineVersion[]
     java: OnlineVersion[]
     redis: OnlineVersion[]
+    mysql: OnlineVersion[]
   }>({
     python: [],
     node: [],
     pg: [],
     java: [],
-    redis: []
+    redis: [],
+    mysql: []
   })
 
   // 已安装工具信息
@@ -47,6 +50,7 @@ export const useToolsStore = defineStore('tools', () => {
     pg: [],
     java: [],
     redis: [],
+    mysql: [],
     current: {}
   })
 
@@ -65,15 +69,16 @@ export const useToolsStore = defineStore('tools', () => {
     node: false,
     pg: false,
     java: false,
-    redis: false
+    redis: false,
+    mysql: false
   })
 
   // 获取在线版本列表
   async function fetchOnlineVersions(
-    tool?: 'python' | 'node' | 'pg' | 'java' | 'redis',
+    tool?: 'python' | 'node' | 'pg' | 'java' | 'redis' | 'mysql',
     forceRefresh = false
   ): Promise<void> {
-    const tools = tool ? [tool] : (['python', 'node', 'pg', 'java', 'redis'] as const)
+    const tools = tool ? [tool] : (['python', 'node', 'pg', 'java', 'redis', 'mysql'] as const)
 
     // 并行请求所有需要加载的工具
     const promises = tools
@@ -115,6 +120,7 @@ export const useToolsStore = defineStore('tools', () => {
         pg: [],
         java: [],
         redis: [],
+        mysql: [],
         current: {}
       }
     }

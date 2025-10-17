@@ -14,7 +14,7 @@ export interface NodeInstallOptions {
 export async function installNode(
   opts: NodeInstallOptions
 ): Promise<{ nodePath: string; npmPath: string }> {
-  const baseDir = toolchainRoot('node', opts.version, opts.platform)
+  const baseDir = toolchainRoot('node', opts.version)
   mkdirSync(baseDir, { recursive: true })
 
   // 解压到临时目录
