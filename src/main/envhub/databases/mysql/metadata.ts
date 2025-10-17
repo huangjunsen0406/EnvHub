@@ -30,7 +30,11 @@ export interface GrantMetadata {
 /**
  * 获取元数据文件路径
  */
-function getMetadataPath(version: string, cluster: string, type: 'databases' | 'users' | 'grants'): string {
+function getMetadataPath(
+  version: string,
+  cluster: string,
+  type: 'databases' | 'users' | 'grants'
+): string {
   const dataDir = mysqlDataDir(version, cluster)
   mkdirSync(dataDir, { recursive: true })
   return join(dataDir, `${type}.json`)
@@ -39,7 +43,11 @@ function getMetadataPath(version: string, cluster: string, type: 'databases' | '
 /**
  * 读取元数据文件
  */
-function readMetadata<T>(version: string, cluster: string, type: 'databases' | 'users' | 'grants'): T[] {
+function readMetadata<T>(
+  version: string,
+  cluster: string,
+  type: 'databases' | 'users' | 'grants'
+): T[] {
   const metadataPath = getMetadataPath(version, cluster, type)
 
   if (!existsSync(metadataPath)) {
@@ -60,7 +68,12 @@ function readMetadata<T>(version: string, cluster: string, type: 'databases' | '
 /**
  * 写入元数据文件
  */
-function writeMetadata<T>(version: string, cluster: string, type: 'databases' | 'users' | 'grants', data: T[]): void {
+function writeMetadata<T>(
+  version: string,
+  cluster: string,
+  type: 'databases' | 'users' | 'grants',
+  data: T[]
+): void {
   const metadataPath = getMetadataPath(version, cluster, type)
 
   try {
@@ -138,7 +151,12 @@ export function addUserMetadata(
   writeMetadata(version, cluster, 'users', users)
 }
 
-export function deleteUserMetadata(version: string, cluster: string, username: string, host: string): void {
+export function deleteUserMetadata(
+  version: string,
+  cluster: string,
+  username: string,
+  host: string
+): void {
   const users = readMetadata<UserMetadata>(version, cluster, 'users')
   const filtered = users.filter((u) => !(u.username === username && u.host === host))
   writeMetadata(version, cluster, 'users', filtered)
@@ -176,8 +194,7 @@ export function addGrantMetadata(
   const grants = readMetadata<GrantMetadata>(version, cluster, 'grants')
 
   const exists = grants.find(
-    (g) =>
-      g.username === grant.username && g.host === grant.host && g.database === grant.database
+    (g) => g.username === grant.username && g.host === grant.host && g.database === grant.database
   )
 
   if (exists) {

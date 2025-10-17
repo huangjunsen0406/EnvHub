@@ -38,10 +38,7 @@ export function setCurrent(tool: Tool, version: string): void {
   writeFileSync(currentStatePath(), JSON.stringify(state, null, 2), 'utf8')
 }
 
-export function listInstalled(
-  tool: Tool,
-  _dp: DetectedPlatform
-): { version: string; path: string }[] {
+export function listInstalled(tool: Tool): { version: string; path: string }[] {
   const base = join(envhubRoot(), 'toolchains', tool)
   try {
     const versions = readdirSync(base, { withFileTypes: true })
@@ -58,7 +55,7 @@ export function listInstalled(
   }
 }
 
-export function uninstallTool(tool: Tool, version: string, _dp: DetectedPlatform): void {
+export function uninstallTool(tool: Tool, version: string): void {
   const p = toolchainRoot(tool, version)
   if (!existsSync(p)) {
     logInfo(`Tool path not found: ${p}`)

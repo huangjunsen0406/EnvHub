@@ -29,8 +29,7 @@ export async function installMysql(
 
   // MySQL 二进制文件路径
   const mysql = process.platform === 'win32' ? join(binDir, 'mysql.exe') : join(binDir, 'mysql')
-  const mysqld =
-    process.platform === 'win32' ? join(binDir, 'mysqld.exe') : join(binDir, 'mysqld')
+  const mysqld = process.platform === 'win32' ? join(binDir, 'mysqld.exe') : join(binDir, 'mysqld')
   const mysqladmin =
     process.platform === 'win32' ? join(binDir, 'mysqladmin.exe') : join(binDir, 'mysqladmin')
   const mysqldump =
@@ -101,11 +100,7 @@ port=${opts.port || 3306}
   logInfo(`MySQL configuration written to ${confPath}`)
 
   // 初始化数据目录（使用 --initialize-insecure 创建无密码 root）
-  const args = [
-    `--defaults-file=${confPath}`,
-    '--initialize-insecure',
-    `--datadir=${dataDir}`
-  ]
+  const args = [`--defaults-file=${confPath}`, '--initialize-insecure', `--datadir=${dataDir}`]
   await run(mysqld, args)
   logInfo(`MySQL data directory initialized at ${dataDir}`)
 
@@ -141,7 +136,9 @@ export async function mysqlStart(
 
 export async function mysqlStop(mysqlBinDir: string, socketPath: string): Promise<void> {
   const mysqladmin =
-    process.platform === 'win32' ? join(mysqlBinDir, 'mysqladmin.exe') : join(mysqlBinDir, 'mysqladmin')
+    process.platform === 'win32'
+      ? join(mysqlBinDir, 'mysqladmin.exe')
+      : join(mysqlBinDir, 'mysqladmin')
 
   const args = ['-u', 'root', `--socket=${socketPath}`, 'shutdown']
   await run(mysqladmin, args)

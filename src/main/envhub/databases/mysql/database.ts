@@ -1,4 +1,5 @@
 import { spawn } from 'child_process'
+import { createReadStream } from 'fs'
 import { join } from 'path'
 import { logInfo } from '../../core/log'
 
@@ -211,18 +212,17 @@ export async function restoreDatabase(
   onLog?: (message: string) => void
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    const mysqlBin = process.platform === 'win32' ? join(binDir, 'mysql.exe') : join(binDir, 'mysql')
+    const mysqlBin =
+      process.platform === 'win32' ? join(binDir, 'mysql.exe') : join(binDir, 'mysql')
 
     const args = ['-u', 'root', `--socket=${socketPath}`, dbName]
 
     onLog?.(`Starting restore to database ${dbName}...\n`)
-    const { spawn: spawnWithInput } = require('child_process')
-    const fs = require('fs')
 
-    const child = spawnWithInput(mysqlBin, args, { stdio: ['pipe', 'pipe', 'pipe'] })
+    const child = spawn(mysqlBin, args, { stdio: ['pipe', 'pipe', 'pipe'] })
 
     // 读取备份文件并传入 stdin
-    const readStream = fs.createReadStream(inputPath)
+    const readStream = createReadStream(inputPath)
     readStream.pipe(child.stdin)
 
     child.stdout?.on('data', (data: Buffer) => {

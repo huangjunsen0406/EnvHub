@@ -167,12 +167,12 @@ app.whenReady().then(() => {
     return {
       platform: dp,
       current: getCurrent().current || {},
-      python: listInstalled('python', dp),
-      node: listInstalled('node', dp),
-      pg: listInstalled('pg', dp),
-      java: listInstalled('java', dp),
-      redis: listInstalled('redis', dp),
-      mysql: listInstalled('mysql', dp)
+      python: listInstalled('python'),
+      node: listInstalled('node'),
+      pg: listInstalled('pg'),
+      java: listInstalled('java'),
+      redis: listInstalled('redis'),
+      mysql: listInstalled('mysql')
     }
   })
 
@@ -426,9 +426,8 @@ app.whenReady().then(() => {
   ipcMain.handle(
     'envhub:uninstall',
     (_evt, args: { tool: 'python' | 'node' | 'pg' | 'java' | 'redis'; version: string }) => {
-      const dp = detectPlatform()
       logInfo(`Uninstall ${args.tool}@${args.version}`)
-      uninstallTool(args.tool, args.version, dp)
+      uninstallTool(args.tool, args.version)
       const cur = getCurrent().current || {}
       if (cur[args.tool] === args.version) {
         delete (cur as Record<string, unknown>)[args.tool]
@@ -1155,9 +1154,8 @@ app.whenReady().then(() => {
 
   // Redis 卸载
   ipcMain.handle('envhub:redis:uninstall', async (_evt, version: string) => {
-    const platform = detectPlatform()
     logInfo(`Uninstalling Redis ${version}`)
-    await uninstallTool('redis', version, platform)
+    await uninstallTool('redis', version)
     return { ok: true }
   })
 
