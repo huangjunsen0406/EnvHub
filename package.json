@@ -3,8 +3,15 @@
   "version": "1.0.0",
   "description": "An Electron application with Vue and TypeScript",
   "main": "./out/main/index.js",
-  "author": "example.com",
-  "homepage": "https://electron-vite.org",
+  "author": "Junsen",
+  "homepage": "https://github.com/huangjunsen0406/EnvHub",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/huangjunsen0406/EnvHub.git"
+  },
+  "bugs": {
+    "url": "https://github.com/huangjunsen0406/EnvHub/issues"
+  },
   "scripts": {
     "format": "prettier --write .",
     "lint": "eslint --cache .",
